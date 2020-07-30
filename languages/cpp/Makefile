@@ -76,15 +76,15 @@ $(TEST_DIR)/$(BUILD_DIR):
 
 $(TEST_DIR)/$(BUILD_DIR)/%.o: test/%.cc $(HEADER_OBJS) | $(TEST_DIR)/$(BUILD_DIR)
 	@ echo "Compiling $<"
-	@ $(CXX) -c $(CFLAGS) -o $@ $(filter %.cc,$^)
+	@ $(CXX) -c $(CFLAGS) -I$(TEST_DIR) -o $@ $(filter %.cc,$^)
 
 $(TEST_DIR)/$(BUILD_DIR)/%.o: src/%.cc $(HEADER_OBJS) | $(TEST_DIR)/$(BUILD_DIR)
 	@ echo "Compiling $<"
-	@ $(CXX) -c $(CFLAGS) -fprofile-arcs -ftest-coverage -o $@ $(filter %.cc,$^)
+	@ $(CXX) -c $(CFLAGS) -I$(TEST_DIR) -fprofile-arcs -ftest-coverage -o $@ $(filter %.cc,$^)
 
 $(TEST_DIR)/$(BUILD_DIR)/$(TEST_BINARY): $(TEST_OBJS) $(HEADER_OBJS) | $(TEST_DIR)/$(BUILD_DIR)
 	@ echo "Linking $@"
-	@ $(CXX) $(filter %.o,$^) -L${BUILD_DIR}/lib -Wl,-rpath,${BUILD_DIR}/lib -latom -lgtest_main -lgtest $(LDFLAGS) -fprofile-arcs -ftest-coverage -o $@
+	@ $(CXX) $(filter %.o,$^) -L${BUILD_DIR}/lib -Wl,-rpath,${BUILD_DIR}/lib -latom -lgtest_main -lgtest -lgmock $(LDFLAGS) -fprofile-arcs -ftest-coverage -o $@
 
 .PHONY: all
 all: $(BUILD_DIR)/lib/$(OUTPUT_NAME)

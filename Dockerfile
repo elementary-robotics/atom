@@ -136,18 +136,26 @@ ARG DEBIAN_FRONTEND=noninteractive
 #
 
 # Install googletest
+
+ADD ./gtest_libs /atom/gtest_libs
+WORKDIR /atom/gtest_libs
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-    libgtest-dev \
     cmake \
     build-essential \
     python3-pip \
     lcov \
     gdb \
- && cd /usr/src/gtest \
- && cmake CMakeLists.txt \
- && make -j8 \
- && cp *.a /usr/lib
+ && tar -xf release-1.10.0.tar.gz \
+ && mkdir -p build \
+ && cd build \
+ && cmake ../googletest-release-1.10.0 \
+ &&  make -j8 \
+ &&  make install \
+ && cd .. \
+ && rm -rf build googletest-release-1.10.0 release-1.10.0.tar.gz
+
+WORKDIR /atom
 
 # Install valgrind
 RUN apt-get install -y --no-install-recommends valgrind

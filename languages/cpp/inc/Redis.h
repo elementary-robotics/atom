@@ -2,9 +2,9 @@
 //
 //  @file Redis.h
 //
-//  @brief Header for the Redis class implementation
+//  @brief Header-only implementation of the Redis class - wraps cpp-bredis
 //
-//  @copy 2018 Elementary Robotics. All rights reserved.
+//  @copy 2020 Elementary Robotics. All rights reserved.
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -27,7 +27,17 @@
 
 #include <Error.h>
 
+using bytes_t = char;
+
 namespace atom {
+
+//to store redis replies read into the buffer
+struct redis_reply {
+    const size_t size;
+    std::shared_ptr<const bytes_t *> data;
+    
+    redis_reply(size_t n, std::shared_ptr<const bytes_t *> p) : size(n), data(std::move(p)){}
+};
 
 template<typename socket, typename endpoint, typename buffer, typename iterator, typename policy> 
 class Redis {
@@ -59,10 +69,10 @@ class Redis {
         }
 
         //start async operations
-        void start(){
+        void start(atom::error err){
                 sock->async_connect(ep, 
                         std::bind(&atom::Redis<socket, endpoint, buffer, iterator, policy>::on_connect, 
-                                this, std::placeholders::_1));
+                                this, err));
         }
         
         //stop async operations
@@ -73,20 +83,57 @@ class Redis {
 
         // sync connect
         void connect(atom::error err){
-            boost::system::error_code ec;
+            atom::error ec;
             sock->connect(ep, ec);
             if(ec){
-                err.set_error_code(atom::error::codes::internal_error);
+                err.set_error_code(atom::error_codes::internal_error);
                 err.set_message(ec.message());
             } else {
                 wrap_socket();
             }
         }
         
+        //release the read buffer - must be called AFTER user is finished using the data in the buffer
+        void release_rx_buffer(bredis::positive_parse_result_t<iterator, policy> result_markers){
+            rx_buff.consume(result_markers.consumed);
+        }
+
+        // xadd operation
+        const atom::redis_reply xadd(std::string stream_name, std::string key, const bytes_t * data, atom::error & err){
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", key, data }, err);
+            if(!err){
+                auto result_markers = bredis_con->read(rx_buff, err);
+                if(!err){
+                    redis_check(result_markers, err);
+                    if(!err){
+                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
+                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
+                    }
+                }
+            }   
+            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+        }
+
+        // xadd operation - without automatically generated ids
+        const atom::redis_reply xadd(std::string stream_name, std::string id, std::string key, const bytes_t * data, atom::error & err){
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, id, key, data }, err);
+            if(!err){
+                auto result_markers = bredis_con->read(rx_buff, err);
+                if(!err){
+                    redis_check(result_markers, err);
+                    if(!err){
+                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
+                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
+                    }
+                }
+            }
+            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+        }
+
     protected:
         //wrap socket as bredis connection - must be called after successful connection to redis
         virtual void wrap_socket(){
-                bredis_con = std::make_shared<bredis::Connection<socket>>(std::move(*sock));
+            bredis_con = std::make_shared<bredis::Connection<socket>>(std::move(*sock));
         }
 
     private:
@@ -107,15 +154,12 @@ class Redis {
         }
 
         //do error detection for redis error messages
-        atom::error redis_check(bredis::positive_parse_result_t<iterator, policy> result_markers){
+        void redis_check(bredis::positive_parse_result_t<iterator, policy> result_markers, atom::error & err){
             error_extractor err_extractor;
-            atom::error err;
             auto redis_error = boost::apply_visitor(err_extractor, result_markers.result);
             if(!redis_error.empty()){
-                err.set_error_code(atom::error::redis_error);
-                err.set_message(redis_error);
+                err.set_redis_error(redis_error);
             }
-            return err;
         }
 
 
@@ -124,8 +168,8 @@ class Redis {
         endpoint ep;
         std::shared_ptr<socket> sock;
         std::shared_ptr<bredis::Connection<socket>> bredis_con;
-        buffer xadd_tx_buff;
-        buffer xadd_rx_buff;
+        buffer tx_buff;
+        buffer rx_buff;
 
         //extractor for redis errors
         struct error_extractor : public boost::static_visitor<std::string> {

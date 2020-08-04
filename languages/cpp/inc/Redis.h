@@ -12,6 +12,7 @@
 #define __ATOM_CPP_REDIS_H
 
 #include <iostream>
+#include <fstream>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -25,7 +26,8 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/thread/thread.hpp>
 
-#include <Error.h>
+#include "Error.h"
+#include "Logger.h"
 
 using bytes_t = char;
 
@@ -51,7 +53,8 @@ class Redis {
             ep(boost::asio::ip::address::from_string(ip_address), 
             boost::lexical_cast<std::uint16_t>(port)), 
             sock(std::make_shared<socket>(iocon)), 
-            bredis_con(nullptr) {};
+            bredis_con(nullptr),
+            logger(&std::cout, "Redis Client") {};
 
         //constructor for unix socket connections
         Redis(boost::asio::io_context & iocon, 
@@ -59,7 +62,8 @@ class Redis {
             iocon(iocon),
             ep(unix_addr), 
             sock(std::make_shared<socket>(iocon)), 
-            bredis_con(nullptr) {};
+            bredis_con(nullptr),
+            logger(&std::cout, "Redis Client") {};
 
         //decon
         virtual ~Redis(){
@@ -77,7 +81,7 @@ class Redis {
         
         //stop async operations
         void stop(){
-            std::cout<< "Closing Socket" <<std::endl;
+            logger.info("closing socket");
             sock->close();
         }
 
@@ -105,101 +109,98 @@ class Redis {
         }
 
         // xadd operation
-        const atom::redis_reply xadd(std::string stream_name, std::string key, const bytes_t * data, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", key, data }, err);
-            if(!err){
-                auto result_markers = bredis_con->read(rx_buff, err);
-                if(!err){
-                    redis_check(result_markers, err);
-                    if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
-                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
-                    }
-                }
-            }   
-            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+        const atom::redis_reply xadd(std::string stream_name, std::string field, const bytes_t * data, atom::error & err){
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, data }, err);
+            return read_reply(err);
         }
 
         // xadd operation - without automatically generated ids
-        const atom::redis_reply xadd(std::string stream_name, std::string id, std::string key, const bytes_t * data, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, id, key, data }, err);
-            if(!err){
-                auto result_markers = bredis_con->read(rx_buff, err);
-                if(!err){
-                    redis_check(result_markers, err);
-                    if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
-                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
-                    }
-                }
-            }
-            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+        const atom::redis_reply xadd(std::string stream_name, std::string id, std::string field, const bytes_t * data, atom::error & err){
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, id, field, data }, err);
+            return read_reply(err);
         }
 
         //xrange operation
         const atom::redis_reply xrange(std::string stream_name, std::string id_start, std::string id_end, std::string count, atom::error & err){
-        bredis_con->write(bredis::single_command_t{ "XRANGE" , stream_name,  id_start, id_end, "COUNT", count}, err);
-            if(!err){
-                auto result_markers = bredis_con->read(rx_buff, err);
-                if(!err){
-                    redis_check(result_markers, err);
-                    if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
-                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
-                    }
-                }
-            }   
-            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+            bredis_con->write(bredis::single_command_t{ "XRANGE" , stream_name,  id_start, id_end, "COUNT", count}, err);
+            return read_reply(err);
         }
 
         //xgroup operation
         const atom::redis_reply xgroup(std::string stream_name, std::string consumer_group_name, std::string last_id, atom::error & err){
-        bredis_con->write(bredis::single_command_t{ "XGROUP" , "CREATE", stream_name,  consumer_group_name, last_id, "MKSTREAM"}, err);
-            if(!err){
-                auto result_markers = bredis_con->read(rx_buff, err);
-                if(!err){
-                    redis_check(result_markers, err);
-                    if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
-                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
-                    }
-                }
-            }   
-            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+            bredis_con->write(bredis::single_command_t{ "XGROUP" , "CREATE", stream_name,  consumer_group_name, last_id, "MKSTREAM"}, err);
+            return read_reply(err);
         }
         
         //xreadgroup operation
         const atom::redis_reply xreadgroup(std::string group_name, std::string consumer_name, std::string block, std::string count, std::string stream_name, std::string id, atom::error & err){
-        bredis_con->write(bredis::single_command_t{ "XREADGROUP" , "GROUP", group_name, consumer_name, "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id}, err);
-            if(!err){
-                auto result_markers = bredis_con->read(rx_buff, err);
-                if(!err){
-                    redis_check(result_markers, err);
-                    if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
-                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
-                    }
-                }
-            }   
-            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+            bredis_con->write(bredis::single_command_t{ "XREADGROUP" , "GROUP", group_name, consumer_name, "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id}, err);
+            return read_reply(err);
         }
 
+        //xread operation
+        const atom::redis_reply xread( std::string count, std::string stream_name, std::string id, atom::error & err){
+            bredis_con->write(bredis::single_command_t{ "XREAD" , "COUNT", count, "STREAMS", stream_name, id}, err);
+            return read_reply(err);
+        }
+
+        //xack operation
+        const atom::redis_reply xack(std::string stream_name, std::string group_name, std::string id, atom::error & err){
+            bredis_con->write(bredis::single_command_t{"XACK", stream_name, group_name, id}, err);
+            return read_reply(err);
+        }
+
+        //set operation - TODO: unpack and handle opt args
+        const atom::redis_reply set(std::string stream_name, std::string id, atom::error & err){
+            bredis_con->write(bredis::single_command_t{"SET", stream_name, id}, err);
+            return read_reply(err);
+        }
+        
+        //xdel operation - TODO: unpack and handle opt args
+        const atom::redis_reply xdel(std::string stream_name, std::string id, atom::error & err){
+            bredis_con->write(bredis::single_command_t{"XDEL", stream_name, id}, err);
+            return read_reply(err);
+        }
+
+        //load a script 
+        const atom::redis_reply load_script(std::string script_file_location, atom::error & err){
+            std::ifstream script_file(script_file_location, std::ios::binary);
+            std::string script = std::string((std::istreambuf_iterator<char>(script_file)), std::istreambuf_iterator<char>());
+
+            bredis_con->write(bredis::single_command_t{"SCRIPT", "LOAD", script}, err);
+            return read_reply(err);
+        }
     protected:
         //wrap socket as bredis connection - must be called after successful connection to redis
         virtual void wrap_socket(){
             bredis_con = std::make_shared<bredis::Connection<socket>>(std::move(*sock));
         }
 
+        //read reply from redis
+        const atom::redis_reply read_reply(atom::error & err){
+            if(!err){
+                auto result_markers = bredis_con->read(rx_buff, err);
+                if(!err){
+                    redis_check(result_markers, err);
+                    if(!err){
+                        const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
+                        return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
+                    }
+                }
+            }   
+            return atom::redis_reply(0, std::make_shared<const bytes_t *>());
+        }
+
     private:
         //connection callback
         void on_connect(const boost::system::error_code& err){
             if(err){
-                std::cout<<"Connection was unsuccessful: "<<  err.message() << std::endl;   
+                logger.error("connection was unsuccessful: " +  err.message());   
                 stop();        
             } else{
-                std::cout<<"Connection to Redis was successful: " << err.message() <<std::endl;
+                logger.info("connection to Redis was successful.");
                 if(!sock->is_open()){
-                    std::cout<<"Socket closed... Connection timed out." <<std::endl;
+                    logger.error("socket is closed.");
                 } else{
                     wrap_socket();
                     //do_async_xadd();
@@ -224,6 +225,7 @@ class Redis {
         std::shared_ptr<bredis::Connection<socket>> bredis_con;
         buffer tx_buff;
         buffer rx_buff;
+        atom::logger logger;
 
         //extractor for redis errors
         struct error_extractor : public boost::static_visitor<std::string> {

@@ -1,6 +1,6 @@
 #include <gmock/gmock.h>
 
-#include <Redis.h>
+#include "Redis.h"
 
 template<typename socket, typename endpoint, typename buffer, typename iterator, typename policy> 
 class MockRedis : public atom::Redis<socket, endpoint, buffer, iterator, policy> {

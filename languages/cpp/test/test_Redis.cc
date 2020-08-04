@@ -10,7 +10,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <mock_Redis.h>
+#include "mock_Redis.h"
 
 
 class RedisTest : public testing::Test {
@@ -38,7 +38,7 @@ public:
         atom::error err;
         mock_redis.disconnect(err);
         if(err){
-            std::cout<<"Error: " << err.message()<<std::endl;
+            std::cout<<"Error: " << err.message() << std::endl;
         }
 	};
 
@@ -88,7 +88,7 @@ TEST_F(RedisTest, xadd){
     const char * test_data = "hello world";
 
     atom::error xadd_err;
-    const atom::redis_reply reply = mock_redis.xadd("test_stream", "test_key", test_data, xadd_err);
+    const atom::redis_reply reply = mock_redis.xadd("test_stream", "test_val", test_data, xadd_err);
     EXPECT_THAT(xadd_err.code(), atom::error_codes::no_error);
     EXPECT_THAT(*reply.data.get(), ::testing::ContainsRegex("\\d*\\-\\d?"));
     EXPECT_THAT(reply.size, ::testing::Ge(0));
@@ -107,7 +107,7 @@ TEST_F(RedisTest, xadd_redis_err){
     std::string bad_id = "74d80474-e6f2-4c01-8e68-908a9f44b05f";
     atom::error xadd_err;
 
-    const atom::redis_reply reply = mock_redis.xadd("test_stream", bad_id, "test_key", test_data, xadd_err);
+    const atom::redis_reply reply = mock_redis.xadd("test_stream", bad_id, "test_val", test_data, xadd_err);
     EXPECT_THAT(xadd_err.code(), atom::error_codes::redis_error);
     EXPECT_THAT(xadd_err.message(), ::testing::StrEq("atom has encountered a redis error"));
     EXPECT_THAT(xadd_err.redis_error(), "ERR Invalid stream ID specified as stream command argument");
@@ -122,11 +122,10 @@ TEST_F(RedisTest, xrange){
     mock_redis.connect(err);
     EXPECT_THAT(err.message(), "Success");
     
-
     atom::error xrange_err;
     const atom::redis_reply reply = mock_redis.xrange("test_stream", "-", "+", "1", xrange_err);
     EXPECT_THAT(xrange_err.code(), atom::error_codes::no_error);
-    EXPECT_THAT(*reply.data.get(), ::testing::ContainsRegex("\\d*\\-\\d?"));
+    EXPECT_THAT(*reply.data.get(), ::testing::ContainsRegex("[0-9]{1,13}-[0-9]?"));
     EXPECT_THAT(reply.size, ::testing::Ge(0));
 
     mock_redis.release_rx_buffer(reply.size);
@@ -139,7 +138,6 @@ TEST_F(RedisTest, xgroup){
     mock_redis.connect(err);
     EXPECT_THAT(err.message(), "Success");
     
-
     atom::error xgroup_err;
     const atom::redis_reply reply = mock_redis.xgroup("test_stream", "my_group", "$", xgroup_err);
     EXPECT_THAT(xgroup_err.code(), atom::error_codes::no_error);
@@ -156,11 +154,109 @@ TEST_F(RedisTest, xreadgroup){
 
     mock_redis.connect(err);
     EXPECT_THAT(err.message(), "Success");
-    
 
     atom::error xreadgroup_err;
     const atom::redis_reply reply = mock_redis.xreadgroup("my_group", "consumer_id", "1", "1",  "test_stream", ">", xreadgroup_err);
     EXPECT_THAT(xreadgroup_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(reply.size, ::testing::Ge(0));
+
+    mock_redis.release_rx_buffer(reply.size);
+}
+
+//test stream command XREAD - nominal
+TEST_F(RedisTest, xread){
+    atom::error err;
+
+    mock_redis.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+    atom::error xread_err;
+    const atom::redis_reply reply = mock_redis.xread("2", "test_stream", "0-0", xread_err);
+    EXPECT_THAT(xread_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(reply.size, ::testing::Ge(0));
+
+    mock_redis.release_rx_buffer(reply.size);
+}
+
+//test stream command XACK - nominal
+TEST_F(RedisTest, xack){
+    atom::error err;
+
+    mock_redis.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+    atom::error xack_err;
+    const atom::redis_reply reply = mock_redis.xack("test_stream", "my_group", "0-0", xack_err);
+    EXPECT_THAT(xack_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(*reply.data.get(), ::testing::ContainsRegex("[0-9]"));
+    EXPECT_THAT(reply.size, ::testing::Ge(0));
+
+    mock_redis.release_rx_buffer(reply.size);
+}
+
+//test stream command SET - nominal
+TEST_F(RedisTest, set){
+    atom::error err;
+
+    mock_redis.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+    atom::error set_err;
+    const atom::redis_reply reply = mock_redis.set("test_stream", "42", set_err);
+    EXPECT_THAT(set_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(*reply.data.get(), ::testing::ContainsRegex("OK"));
+    EXPECT_THAT(reply.size, ::testing::Ge(0));
+
+    mock_redis.release_rx_buffer(reply.size);
+}
+
+//test stream command XDEL - nominal
+TEST_F(RedisTest, xdel){
+    atom::error err;
+
+    mock_redis.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+    //add to a stream with xadd
+    atom::error xadd_err;
+    const atom::redis_reply reply0 = mock_redis.xadd("my_stream5", "test_field0", "my first data here", xadd_err);
+    const atom::redis_reply reply1 = mock_redis.xadd("my_stream5", "test_field1", "my second data here", xadd_err);
+    std::cout<< "REPLY 1 "<< *reply1.data.get()<<std::endl;
+    EXPECT_THAT(xadd_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(*reply1.data.get(), ::testing::ContainsRegex("[0-9]{1,13}-[0-9]?"));
+    EXPECT_THAT(reply1.size, ::testing::Ge(0));
+
+    //grab the id
+    std::string redis_reply = *reply1.data.get();
+    size_t position = redis_reply.find("\r\n");
+    std::string id = redis_reply.substr(redis_reply.find("\r\n")+position-1);
+
+    //release buffer
+    mock_redis.release_rx_buffer(reply1.size);
+
+    //delete id with xdel
+    atom::error xdel_err;
+    const atom::redis_reply reply2 = mock_redis.xdel("my_stream5", id, xdel_err);
+    EXPECT_THAT(xdel_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(*reply2.data.get(), ::testing::ContainsRegex("1"));
+    EXPECT_THAT(reply2.size, ::testing::Ge(0));
+
+    //release buffer
+    mock_redis.release_rx_buffer(reply2.size);
+}
+
+//test stream command SCRIPT LOAD - nominal
+TEST_F(RedisTest, load_script){
+    atom::error err;
+
+    mock_redis.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+
+    atom::error script_err;
+    const atom::redis_reply reply = mock_redis.load_script("/atom/lua-scripts/stream_reference.lua", script_err);
+    EXPECT_THAT(script_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(*reply.data.get(), ::testing::HasSubstr("$"));
     EXPECT_THAT(reply.size, ::testing::Ge(0));
 
     mock_redis.release_rx_buffer(reply.size);

@@ -9,6 +9,6 @@ class MockRedis : public atom::Redis<socket, endpoint, buffer, iterator, policy>
         atom::Redis<socket, endpoint, buffer, iterator, policy>(iocon, unix_addr) {}
     
     using atom::Redis<socket, endpoint, buffer, iterator, policy>::wrap_socket;
-    //MOCK_METHOD(void, wrap_socket, (), (override));
+    MOCK_METHOD(void, wrap_socket, (), (override));
 
 };

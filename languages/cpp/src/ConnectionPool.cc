@@ -54,13 +54,12 @@ int atom::ConnectionPool::number_available_tcp(){
 std::shared_ptr<atom::ConnectionPool::UNIX_Redis> atom::ConnectionPool::get_unix_connection(){
     std::unique_lock<std::mutex> lock(mutex);
     if(unix_connections.empty()){
-        if(open_unix_connections + open_tcp_connections <= max_connections){
+        if(open_unix_connections + open_tcp_connections < max_connections){
             resize_unix();
-            lock.unlock();
-            return get_unix_connection();
-        } 
-        //wait for a connection to be released
-        wait_for_unix_released(lock);
+        } else{
+            //wait for a connection to be released
+            wait_for_unix_released(lock);
+        }
     }
     //ensure the connection pool isn't empty
     assert(!unix_connections.empty());
@@ -74,14 +73,13 @@ std::shared_ptr<atom::ConnectionPool::UNIX_Redis> atom::ConnectionPool::get_unix
 
 std::shared_ptr<atom::ConnectionPool::TCP_Redis> atom::ConnectionPool::get_tcp_connection(){
     std::unique_lock<std::mutex> lock(mutex);
-    if(unix_connections.empty()){
-        if(open_unix_connections + open_tcp_connections <= max_connections){
-            resize_tcp();
-            lock.unlock();
-            return get_tcp_connection();
-        } 
-        //wait for a connection to be released
-        wait_for_tcp_released(lock);
+    if(tcp_connections.empty()){
+        if(open_unix_connections + open_tcp_connections < max_connections){
+            resize_tcp();            
+        } else{
+            //wait for a connection to be released
+            wait_for_tcp_released(lock);
+        }
     }
     //ensure the connection pool isn't empty
     assert(!tcp_connections.empty());
@@ -116,14 +114,12 @@ std::shared_ptr<atom::ConnectionPool::TCP_Redis>  atom::ConnectionPool::make_tcp
 
 void atom::ConnectionPool::resize_unix(){
     //currently doubling the pool
-    int current_size = unix_connections.size();
-    make_unix_connections(current_size);
+    make_unix_connections(open_unix_connections);
 }
 
 void atom::ConnectionPool::resize_tcp(){
     //currently doubling the pool
-    int current_size = tcp_connections.size();
-    make_tcp_connections(current_size);
+    make_tcp_connections(open_tcp_connections);
 }
 
 void atom::ConnectionPool::make_unix_connections(int num_unix){

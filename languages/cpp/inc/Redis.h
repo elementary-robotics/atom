@@ -119,6 +119,14 @@ class Redis {
             bredis_con->write(bredis::single_command_t{ "XADD", stream_name, id, field, data }, err);
             return read_reply(err);
         }
+        
+        // xadd operation with stringstream - used for msgpack serialized types
+        const atom::redis_reply xadd(std::string stream_name, std::string field, std::stringstream & data, atom::error & err){
+            std::string str = data.str();
+            const char * msgpack_data = str.c_str();
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, msgpack_data }, err);
+            return read_reply(err);
+        }
 
         //xrange operation
         const atom::redis_reply xrange(std::string stream_name, std::string id_start, std::string id_end, std::string count, atom::error & err){
@@ -170,6 +178,25 @@ class Redis {
             bredis_con->write(bredis::single_command_t{"SCRIPT", "LOAD", script}, err);
             return read_reply(err);
         }
+
+        // helper function for tokenizing redis replies
+        std::vector<std::string> tokenize(std::string s, std::string delimiter) {
+            size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+            std::string token;
+            std::vector<std::string> res;
+
+            while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+                token = s.substr(pos_start, pos_end - pos_start);
+                pos_start = pos_end + delim_len;
+                res.push_back(token);
+            }
+
+            if(!s.substr(pos_start).empty()){
+                res.push_back(s.substr(pos_start));
+            }
+            return res;
+        }
+
     protected:
         //wrap socket as bredis connection - must be called after successful connection to redis
         virtual void wrap_socket(){
@@ -187,7 +214,8 @@ class Redis {
                         return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
                     }
                 }
-            }   
+            }
+            logger.error(err.message());   
             return atom::redis_reply(0, std::make_shared<const bytes_t *>());
         }
 

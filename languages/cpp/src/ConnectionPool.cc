@@ -24,7 +24,20 @@ atom::ConnectionPool::ConnectionPool(boost::asio::io_context &iocon,
                                                             redis_ip(redis_ip),
                                                             open_tcp_connections(0),
                                                             open_unix_connections(0){ }
-    
+
+atom::ConnectionPool::ConnectionPool(boost::asio::io_context &iocon, 
+                                     int max_connections, 
+                                     int timeout,
+                                     std::string redis_ip,
+                                     std::ostream & logstream,
+                                     std::string logger_name) : iocon(iocon),
+                                                            logger(&logstream, logger_name),
+                                                            max_connections(max_connections),
+                                                            timeout(timeout),
+                                                            redis_ip(redis_ip),
+                                                            open_tcp_connections(0),
+                                                            open_unix_connections(0){ }
+
 void atom::ConnectionPool::init(int num_unix, int num_tcp){
     if(num_tcp + num_unix > max_connections){
         throw std::runtime_error("Number of maximum connections to Redis exceeded by the combined total of unix and tcp connections requested.");
@@ -174,4 +187,14 @@ void atom::ConnectionPool::wait_for_unix_released(std::unique_lock<std::mutex> &
     } else{
         cond_var.wait(lock, [this] {return !(this->unix_connections.empty()); });
     }
+}
+
+template<> 
+std::shared_ptr<atom::ConnectionPool::UNIX_Redis> atom::ConnectionPool::get_connection<atom::ConnectionPool::UNIX_Redis>() {
+    return get_unix_connection();
+}
+
+template<> 
+std::shared_ptr<atom::ConnectionPool::TCP_Redis> atom::ConnectionPool::get_connection<atom::ConnectionPool::TCP_Redis>() {
+    return get_tcp_connection();
 }

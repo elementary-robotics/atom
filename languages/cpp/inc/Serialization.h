@@ -26,11 +26,13 @@
 
 
 namespace atom {
-    class serialization {
+    class Serialization {
     public:
     
-        serialization() : logger(&std::cout, "Serializer"){}
-        virtual ~serialization(){}
+        Serialization() : logger(&std::cout, "Serializer"){}
+        Serialization(std::ostream& logstream, std::string log_name) : logger(&logstream, log_name){}
+
+        virtual ~Serialization(){}
 
         //streamType should support write(const char*, size_t)
         template<typename MsgPackType, typename streamType> 
@@ -56,7 +58,7 @@ namespace atom {
 
     private:
         //members
-        atom::logger logger;
+        Logger logger;
     };
 }
 

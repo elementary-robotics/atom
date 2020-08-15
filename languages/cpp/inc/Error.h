@@ -124,19 +124,22 @@ namespace atom{
             
             //set the error code
             void set_error_code(int code){
-                assign(code, detail::atom_error_category(code));
+                err_cat = std::make_shared<detail::atom_error_category>(code);
+                assign(code, *err_cat);
             }
 
             //set redis specific error code
             void set_redis_error(std::string msg){
                 int code =  atom::error_codes::redis_error;
-                assign(code, detail::atom_error_category(code, msg));
+                err_cat = std::make_shared<detail::atom_error_category>(code);
+                assign(code, *err_cat);
                 msg_= msg;
             }
 
         private:
             //members
             std::string msg_;
+            std::shared_ptr<detail::atom_error_category> err_cat;
     };
 } //namespace atom
 

@@ -2,7 +2,7 @@
 //
 //  @file ConnectionPool.h
 //
-//  @brief Header-only implementation of the Connection Pool class
+//  @brief implementation of the Connection Pool class
 //
 //  @copy 2020 Elementary Robotics. All rights reserved.
 //
@@ -34,12 +34,21 @@ public:
 
     ConnectionPool(boost::asio::io_context &iocon, int max_connections, int timeout, std::string redis_ip);
 
+    ConnectionPool(boost::asio::io_context &iocon, int max_connections, int timeout, std::string redis_ip, 
+                    std::ostream & logstream, std::string logger_name);
+
     void init(int num_unix, int num_tcp);
 
     virtual ~ConnectionPool(){};
 
     std::shared_ptr<UNIX_Redis> get_unix_connection();
     std::shared_ptr<TCP_Redis> get_tcp_connection();
+
+    template<typename ConnectionType> 
+    std::shared_ptr<ConnectionType> get_connection() {
+        logger.emergency("Unable to create desired conection type. Unsupported.");
+            throw std::runtime_error("Unsupported connection type requested from Connection Pool.");
+    };
 
     void release_connection(std::shared_ptr<UNIX_Redis>);
     void release_connection(std::shared_ptr<TCP_Redis>);
@@ -73,7 +82,7 @@ private:
 
 
     boost::asio::io_context& iocon;
-    atom::logger logger;
+    Logger logger;
     int max_connections;
     std::chrono::milliseconds timeout;
     std::string redis_ip;

@@ -13,76 +13,76 @@
 #include <cstdlib>
 #include <boost/date_time.hpp>
 
-atom::logger::logger(std::ostream * out, std::string name): name(name), out(out){
+atom::Logger::Logger(std::ostream * out, std::string name): name(name), out(out){
     std::string default_log_level = std::getenv("DEFAULT_LOG_LEVEL");
     initialize_map();
     set_level(default_log_level);
 }
 
-void atom::logger::emergency(std::string message){
-    if(log_level >= atom::logger::level::EMERG){
+void atom::Logger::emergency(std::string message){
+    if(log_level >= atom::Logger::level::EMERG){
         *out << "[ EMERGENCY ] [ " << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::alert(std::string message){
-    if(log_level >= atom::logger::level::ALERT){
+void atom::Logger::alert(std::string message){
+    if(log_level >= atom::Logger::level::ALERT){
         *out << "[ ALERT ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::critical(std::string message){
-    if(log_level >= atom::logger::level::CRIT){
+void atom::Logger::critical(std::string message){
+    if(log_level >= atom::Logger::level::CRIT){
         *out << "[ CRITICAL ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
-void atom::logger::error(std::string message){
-    if(log_level >= atom::logger::level::ERR){
+void atom::Logger::error(std::string message){
+    if(log_level >= atom::Logger::level::ERR){
         *out << "[ ERROR ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::warning(std::string message){
-    if(log_level >= atom::logger::level::WARNING){
+void atom::Logger::warning(std::string message){
+    if(log_level >= atom::Logger::level::WARNING){
         *out << "[ WARNING ] [ " << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::notice(std::string message){
-    if(log_level >= atom::logger::level::NOTICE){
+void atom::Logger::notice(std::string message){
+    if(log_level >= atom::Logger::level::NOTICE){
         *out << "[ NOTICE ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::info(std::string message){
-    if(log_level >= atom::logger::level::INFO){
+void atom::Logger::info(std::string message){
+    if(log_level >= atom::Logger::level::INFO){
         *out << "[ INFO ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::debug(std::string message){
-    if(log_level >= atom::logger::level::DEBUG){
+void atom::Logger::debug(std::string message){
+    if(log_level >= atom::Logger::level::DEBUG){
         *out << "[ DEBUG ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
     }
 }
 
-void atom::logger::set_level(std::string level){
+void atom::Logger::set_level(std::string level){
     if(level_map.find(level) != level_map.end()){
         log_level = level_map[level];
     } else{
@@ -90,18 +90,18 @@ void atom::logger::set_level(std::string level){
     }
 }
 
-atom::logger::level atom::logger::get_level(){
+atom::Logger::level atom::Logger::get_level(){
     return log_level;
 }
 
 
-void atom::logger::initialize_map(){
-    level_map["EMERG"] = atom::logger::level::EMERG;
-    level_map["ALERT"] = atom::logger::level::ALERT;
-    level_map["CRIT"] = atom::logger::level::CRIT;
-    level_map["ERR"] = atom::logger::level::ERR;
-    level_map["WARNING"] = atom::logger::level::WARNING;
-    level_map["NOTICE"] = atom::logger::level::NOTICE;
-    level_map["INFO"] = atom::logger::level::INFO;
-    level_map["DEBUG"] = atom::logger::level::DEBUG;
+void atom::Logger::initialize_map(){
+    level_map["EMERG"] = atom::Logger::level::EMERG;
+    level_map["ALERT"] = atom::Logger::level::ALERT;
+    level_map["CRIT"] = atom::Logger::level::CRIT;
+    level_map["ERR"] = atom::Logger::level::ERR;
+    level_map["WARNING"] = atom::Logger::level::WARNING;
+    level_map["NOTICE"] = atom::Logger::level::NOTICE;
+    level_map["INFO"] = atom::Logger::level::INFO;
+    level_map["DEBUG"] = atom::Logger::level::DEBUG;
 }

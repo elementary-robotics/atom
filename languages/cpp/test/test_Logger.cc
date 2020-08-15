@@ -31,13 +31,13 @@ public:
     ~LoggerTest(){
     }
     
-   atom::logger logger;
+   atom::Logger logger;
    std::ostringstream stream;
 };
 
 TEST_F(LoggerTest, default_logger){
     //default logger should be at info level
-    EXPECT_THAT(logger.get_level(), atom::logger::level::INFO);
+    EXPECT_THAT(logger.get_level(), atom::Logger::level::INFO);
 }
 
 TEST_F(LoggerTest, bad_logger){

@@ -18,7 +18,7 @@
 
 namespace atom {
 
-    class logger {
+    class Logger {
         public:
             //recognized log levels
             enum level {
@@ -32,7 +32,8 @@ namespace atom {
                 DEBUG
             };
 
-            logger(std::ostream * out, std::string name);
+            Logger(std::ostream * out, std::string name);
+            virtual ~Logger(){};
 
             //level loggers
             void emergency(std::string message);
@@ -57,7 +58,7 @@ namespace atom {
             std::string name;
             std::ostream * out;
             level log_level;
-            std::map<std::string, atom::logger::level> level_map;
+            std::map<std::string, atom::Logger::level> level_map;
     };
 }
 

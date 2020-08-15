@@ -53,10 +53,10 @@ public:
     ~SerializationTest(){
     }
     
-    std::string stream_name = "serialization_test";
+    std::string stream_name = "Serialization_test";
     std::string id;
     boost::asio::io_context io_con;
-    atom::serialization serialization;
+    atom::Serialization serialization;
     atom::Redis<socket_t, endpoint_t, Buffer, Iterator, Policy> redis;
 };
 

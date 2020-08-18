@@ -24,6 +24,7 @@ void atom::Logger::emergency(std::string message){
         *out << "[ EMERGENCY ] [ " << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 
@@ -32,6 +33,7 @@ void atom::Logger::alert(std::string message){
         *out << "[ ALERT ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 
@@ -40,6 +42,7 @@ void atom::Logger::critical(std::string message){
         *out << "[ CRITICAL ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 void atom::Logger::error(std::string message){
@@ -47,6 +50,7 @@ void atom::Logger::error(std::string message){
         *out << "[ ERROR ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 
@@ -55,6 +59,7 @@ void atom::Logger::warning(std::string message){
         *out << "[ WARNING ] [ " << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 
@@ -63,6 +68,7 @@ void atom::Logger::notice(std::string message){
         *out << "[ NOTICE ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 
@@ -71,6 +77,7 @@ void atom::Logger::info(std::string message){
         *out << "[ INFO ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 
@@ -79,6 +86,7 @@ void atom::Logger::debug(std::string message){
         *out << "[ DEBUG ] [ "  << name <<" ] [ " << 
                 boost::posix_time::second_clock::local_time() <<
                 " ] " << message <<"\n";
+        out->flush();
     }
 }
 

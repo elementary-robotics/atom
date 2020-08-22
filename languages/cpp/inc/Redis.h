@@ -26,15 +26,17 @@
 #include <boost/asio.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/thread/thread.hpp>
+#include <boost/variant.hpp>
 
 #include "Error.h"
 #include "Logger.h"
+#include "Parser.h"
 
 using bytes_t = char;
 
 namespace atom {
 
-//to store redis replies read into the buffer
+//to store redis replies read into the buffer //TODO: integrate the parsed replies into this.
 struct redis_reply {
     const size_t size;
     std::shared_ptr<const bytes_t *> data;
@@ -71,7 +73,8 @@ class Redis {
             boost::lexical_cast<std::uint16_t>(port)), 
             sock(std::make_shared<socket>(iocon)), 
             bredis_con(nullptr),
-            logger(&std::cout, "Redis Client") {};
+            logger(&std::cout, "Redis Client"),
+            parser() {};
 
         //constructor for unix socket connections
         Redis(boost::asio::io_context & iocon, 
@@ -80,7 +83,8 @@ class Redis {
             ep(unix_addr), 
             sock(std::make_shared<socket>(iocon)), 
             bredis_con(nullptr),
-            logger(&std::cout, "Redis Client") {};
+            logger(&std::cout, "Redis Client"),
+            parser() {};
 
         //decon
         virtual ~Redis(){
@@ -134,13 +138,13 @@ class Redis {
         // xadd operation
         atom::redis_reply xadd(std::string stream_name, std::string field, const bytes_t * data, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, data }, err);
-            return read_reply(field, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         // xadd operation - without automatically generated ids
         atom::redis_reply xadd(std::string stream_name, std::string id, std::string field, const bytes_t * data, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XADD", stream_name, id, field, data }, err);
-            return read_reply(field, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
         // xadd operation with stringstream - used for msgpack serialized types
@@ -148,61 +152,61 @@ class Redis {
             std::string str = data.str();
             const char * msgpack_data = str.c_str();
             bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, msgpack_data }, err);
-            return read_reply(field, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         //xrange operation
         atom::redis_reply xrange(std::string stream_name, std::string id_start, std::string id_end, std::string count, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XRANGE" , stream_name,  id_start, id_end, "COUNT", count}, err);
-            return read_reply(stream_name, err);
+            return read_reply(atom::reply_type::options::entry_map, err);
         }
 
         //xrevrange operation
         atom::redis_reply xrevrange(std::string stream_name, std::string id_start, std::string id_end,  atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XREVRANGE" , stream_name,  id_start, id_end}, err);
-            return read_reply(stream_name, err);
+            return read_reply(atom::reply_type::options::entry_map, err);
         }
         
         //xrevrange operation - count specified
         atom::redis_reply xrevrange(std::string stream_name, std::string id_start, std::string id_end, std::string count, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XREVRANGE" , stream_name,  id_start, id_end, "COUNT", count}, err);
-            return read_reply(stream_name, err);
+            return read_reply(atom::reply_type::options::entry_map, err);
         }
 
         //xgroup operation
         atom::redis_reply xgroup(std::string stream_name, std::string consumer_group_name, std::string last_id, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XGROUP" , "CREATE", stream_name,  consumer_group_name, last_id, "MKSTREAM"}, err);
-            return read_reply(consumer_group_name, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
         //xreadgroup operation
         atom::redis_reply xreadgroup(std::string group_name, std::string consumer_name, std::string block, std::string count, std::string stream_name, std::string id, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XREADGROUP" , "GROUP", group_name, consumer_name, "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id}, err);
-            return read_reply(consumer_name, err);
+            return read_reply(atom::reply_type::options::entry_maplist, err);
         }
 
         //xread operation
         atom::redis_reply xread( std::string count, std::string stream_name, std::string id, atom::error & err){
             bredis_con->write(bredis::single_command_t{ "XREAD" , "COUNT", count, "STREAMS", stream_name, id}, err);
-            return read_reply(id, err);
+            return read_reply(atom::reply_type::options::entry_maplist, err);
         }
 
         //xack operation
         atom::redis_reply xack(std::string stream_name, std::string group_name, std::string id, atom::error & err){
             bredis_con->write(bredis::single_command_t{"XACK", stream_name, group_name, id}, err);
-            return read_reply(id, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         //set operation - TODO: unpack and handle opt args
         atom::redis_reply set(std::string stream_name, std::string id, atom::error & err){
             bredis_con->write(bredis::single_command_t{"SET", stream_name, id}, err);
-            return read_reply(id, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
         //xdel operation - TODO: unpack and handle opt args
         atom::redis_reply xdel(std::string stream_name, std::string id, atom::error & err){
             bredis_con->write(bredis::single_command_t{"XDEL", stream_name, id}, err);
-            return read_reply(id, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         //load a script 
@@ -211,7 +215,7 @@ class Redis {
             std::string script = std::string((std::istreambuf_iterator<char>(script_file)), std::istreambuf_iterator<char>());
             script_file.close();
             bredis_con->write(bredis::single_command_t{"SCRIPT", "LOAD", script}, err);
-            return read_reply(script_file_location, err, false);
+            return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         // helper function for tokenizing redis replies
@@ -238,23 +242,8 @@ class Redis {
             bredis_con = std::make_shared<bredis::Connection<socket>>(std::move(*sock));
         }
 
-        //print map during debug
-        void map_dbg(std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> pointers_map){
-            logger.debug("---------Validate Redis Reply Map ---------");
-            for(auto& m: pointers_map){
-                logger.debug("...........begin................");
-                auto map = m.second;
-                logger.debug("KEY: "+ m.first);
-                for(auto &p: map){
-                    logger.debug("\tDATA: "+ std::string(*(p.first),p.second) +", SIZE: "+std::to_string(p.second));
-                }
-                logger.debug("............end................");
-
-            }
-        }
-
         //read reply from redis
-        atom::redis_reply read_reply(std::string key, atom::error & err, bool process_resp=true){
+        atom::redis_reply read_reply(atom::reply_type::options parse_option, atom::error & err, bool process_resp=true){
             if(!err){
                 auto result_markers = bredis_con->read(rx_buff, err);
                 if(!err){
@@ -262,8 +251,8 @@ class Redis {
                     if(!err){
                         const bytes_t * data = static_cast<const bytes_t *>(rx_buff.data().data());
                         if(process_resp){
-                            std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> pointers_map = process(key, rx_buff, err);
-                            map_dbg(pointers_map);
+                            //TODO integrate into redis_reply
+                            atom::reply_type::parsed_reply parsed = parser.process(rx_buff, parse_option, err);
                         }
                         return atom::redis_reply(result_markers.consumed, std::make_shared<const bytes_t *>(data));
                     }
@@ -309,6 +298,7 @@ class Redis {
         buffer tx_buff;
         buffer rx_buff;
         Logger logger;
+        Parser<buffer> parser;
 
         //extractor for redis errors
         struct error_extractor : public boost::static_visitor<std::string> {
@@ -323,145 +313,9 @@ class Redis {
             }
         };
 
-        //parser for redis replies - maps key to map of pointers to underlying buffer and associated data length
-        std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>>
-            process(std::string key, const buffer &buff, atom::error & err){
-                using iterator_t = boost::asio::buffers_iterator<
-                            typename buffer::const_buffers_type, char>;
-                std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> parsed_map;
-                std::vector<std::pair<std::shared_ptr<const char *>, size_t>> inner_data;
-                auto end = iterator_t::end(buff.data());
-
-                if(iterator_t::begin(buff.data()) == end){
-                    logger.debug("Empty response from Redis.");
-                    return parsed_map;
-                }
-
-                bool break_out = false;
-                for(auto it = iterator_t::begin(buff.data()); it != end; ++it){
-                    switch(*it) {
-                    case '+':  // simple string
-                    case '-':  // nill or error
-                    case ':': { // integer
-                        it++; //move past indicator char
-                        size_t str_len = find_data(it, end);
-                        std::shared_ptr<const char *> str = std::make_shared<const char *>(&*(it));
-                        inner_data.push_back(std::pair<std::shared_ptr<const char *>,size_t>(str, str_len)); 
-                        it += (str_len);
-                        break;
-                    }
-                    case '$': {// bulk string - will carry on until /r/n is hit
-                        it++; //move past the indicator char
-                        std::tuple<size_t,size_t> sizes = find_data_len(it, end); // <num_bytes, num characters in data string>
-                        size_t num_bytes = std::get<0>(sizes);
-                        size_t data_len = std::get<1>(sizes);
-                        std::shared_ptr<const char *> data = std::make_shared<const char *>(&*(it+=num_bytes));
-                        inner_data.push_back(std::pair<std::shared_ptr<const char *>,size_t>(data, data_len));
-                        it+= (data_len); //move pointer past the data string
-                        break;
-                    }
-                    case '*': { //array
-                        it++; //move past the indicator char
-                        std::tuple<size_t,size_t> sizes = find_data_len(it, end);
-                        size_t num_bytes = std::get<0>(sizes);
-                        int num_elems = std::get<1>(sizes); // num elems in array
-                        it+=num_bytes; //move past the chars that indicate # of array elements
-                        size_t data_len = process_array(it, iterator::end(buff.data()), num_elems, parsed_map);
-                        it += (data_len);
-                        if(it==end){
-                            break_out = true;
-                        }
-                        break;
-                    }
-                    }
-                    if(break_out) { break; };
-                }
-                if(!inner_data.empty()){
-                    parsed_map.insert({key, inner_data});
-                }
-                return parsed_map;
-            }  
-
-        //parser for arrays
-        size_t process_array(const iterator &begin, const iterator &end, int num_elems,
-                    std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> & parsed_map) {
-            bool id_read = false;
-            std::string id;
-            size_t total_data_len = 0;
-            std::vector<std::pair<std::shared_ptr<const char *>, size_t>> inner_data;
-            for(int entry=0; entry < num_elems; entry++){ //iterate through the entries
-                for(auto it = begin; it != end; it++){
-                    switch(*it) {
-                    case '+':
-                    case '-':
-                    case ':': {
-                        it++; //move past indicator char
-                        size_t str_len = find_data(it, end);
-                        std::shared_ptr<const char *> str = std::make_shared<const char *>(&*(it));
-                        inner_data.push_back(std::pair<std::shared_ptr<const char *>,size_t>(str, str_len)); 
-                        total_data_len+=str_len;
-                        it += (str_len);
-                        break;
-                    }
-                    case '$': { //is a bulk string - will carry on until /r/n is hit
-                        it++; //move past the indicator char
-                        std::tuple<size_t,size_t> sizes = find_data_len(it, end);
-                        size_t num_bytes = std::get<0>(sizes); //offset where the data starts from current iter
-                        size_t data_len = std::get<1>(sizes); //num characters in data string
-                        total_data_len+=data_len;
-                        std::shared_ptr<const char *> data = std::make_shared<const char *>(&*(it+=num_bytes));
-                                                
-                        if(!id_read){
-                            id = std::string(*data, data_len);
-                            id_read=true;
-                        } /* else{ */
-                            inner_data.push_back(std::pair<std::shared_ptr<const char *>,size_t>(data, data_len));
-                        /* } */
-                        it+= (data_len); //move pointer past the data string
-                        //break; //TODO test why this causes failures
-                    }
-                    default:
-                        total_data_len+=1;
-                    }
-                }
-            }
-            if(!inner_data.empty()){
-                parsed_map.insert({id, inner_data});
-            }
-            return total_data_len;            
-        }
-
-        //returns number of bytes the data length is stored in, and the value of the data length itself
-        std::tuple<size_t, size_t> find_data_len(const iterator &begin, const iterator &end){
-            size_t data_len, size = 0;
-            std::stringstream len;
-            for(auto it = begin; it != end; it++){
-                if(*it != '\r'){
-                    size++;
-                    len << *it;
-                } else{
-                    data_len = size_t(std::stoul(len.str()));
-                    size+=2; //move it past the \r\n chars
-                    return std::tuple<size_t, size_t>(size, data_len);
-                }
-            }
-            return std::tuple<size_t, size_t>(size, data_len);
-        }
-
-        //used for resp types that do not provide data length before the data
-        size_t find_data(const iterator &begin, const iterator &end){
-            size_t size = 0;
-            for(auto it = begin; it != end; it++){
-                if(*it != '\r'){
-                    size++;
-                } else{
-                    return size;
-                }
-            }
-            return size;
-        }
-
 };
+
+
 
 }
 

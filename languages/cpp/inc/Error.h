@@ -16,16 +16,16 @@
 
 #include <boost/system/error_code.hpp>
 
-//define the error codes specific to atom
+///Error codes specific to atom
 namespace atom {
     enum error_codes {
-        no_error,
-        internal_error,
-        redis_error,
-        no_response,
-        invalid_command,
-        unsupported_command,
-        callback_failed
+        no_error, ///< 0
+        internal_error, ///< 1
+        redis_error,///< 2
+        no_response, ///< 3
+        invalid_command, ///< 4
+        unsupported_command, ///< 5
+        callback_failed ///< 6
     };
 } //namespace atom
 
@@ -47,19 +47,28 @@ namespace detail
   class atom_error_category : public boost::system::error_category
   {
   public:
-    //initialize error category
+    ///Constructor for atom error category.
+    ///Inherits from boost::system::error_category.
     atom_error_category() : error_category(){}
     
-    //initialize error category with error code id
+    ///Constructor for atom error category.
+    ///Inherits from boost::system::error_category.
+    ///@param code error code id to initialize error category with 
     atom_error_category(int code) : error_category(code){}
 
-    //initialize error category with error code id and message
+    ///Constructor for atom error category.
+    ///Inherits from boost::system::error_category.
+    ///@param code error code id to initialize error category with 
+    ///@param msg message that describes error code id
     atom_error_category(int code, std::string msg) : error_category(code) {/* redis_error_msg = msg; */}
 
-    // Return a short descriptive name for the category
+    /// Get name information on the error category
+    ///@returns a short descriptive name for the error category
     virtual const char *name() const noexcept override final { return "atom error"; }
 
-    // Return what each enum means in text
+    ///Provides description of error code in text
+    ///@param code error code id
+    ///@return what each error code means in text
     virtual std::string message(int code) const override final
     {
       switch(static_cast<atom::error_codes>(code))
@@ -82,7 +91,9 @@ namespace detail
       }
     }
 
-    // Allow generic error conditions to be compared to atom errors
+    
+    ///Allow generic error conditions to be compared to atom errors
+    ///@param code error code id
     virtual boost::system::error_condition default_error_condition(int code) const noexcept override final
     {
       switch(static_cast<atom::error_codes>(code))
@@ -109,26 +120,33 @@ namespace detail
 namespace atom{
     class error : public boost::system::error_code {
         public:
+            ///Constructor for error.
+            ///Inherits from boost::system::error_code
             error() : boost::system::error_code(), msg_("Success"){};
 
             virtual ~error(){};
 
-            //get the error code
+            ///Get the error code
+            ///@return error code id
             const int code(){
                 return value();
             }
 
+            ///Get detailed information on the error message received from Redis Server
+            ///@return error message received from Redis Server
             std::string redis_error(){
                 return msg_;
             }
             
-            //set the error code
+            ///Set the error code and assign the atom error category
+            ///@param code error code to use with atom_error_category
             void set_error_code(int code){
                 err_cat = std::make_shared<detail::atom_error_category>(code);
                 assign(code, *err_cat);
             }
 
-            //set redis specific error code
+            ///Set redis specific error code 
+            ///@param msg text that describes error
             void set_redis_error(std::string msg){
                 int code =  atom::error_codes::redis_error;
                 err_cat = std::make_shared<detail::atom_error_category>(code);

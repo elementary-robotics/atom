@@ -20,7 +20,8 @@ namespace atom {
 
     class Logger {
         public:
-            //recognized log levels
+            ///Recognized log levels,
+            ///used to determine the extent of logging.
             enum level {
                 EMERG,
                 ALERT,
@@ -32,23 +33,50 @@ namespace atom {
                 DEBUG
             };
 
+            ///Constructor for Logger
+            ///@param out stream to which to publish log messages to
+            ///@param name name of the logger
             Logger(std::ostream * out, std::string name);
             virtual ~Logger(){};
 
-            //level loggers
+            ///Emergency Level logger. A message will be logged if the log level set to EMERG or more.
+            ///@param message text to log at EMERG level
             void emergency(std::string message);
+
+            ///Alert Level logger. A message will be logged if the log level set to ALERT or more.
+            ///@param message text to log at ALERT level
             void alert(std::string message);
+
+            ///Criical Level logger. A message will be logged if the log level set to CRIT or more.
+            ///@param message text to log at CRIT level
             void critical(std::string message);
+
+            ///Error Level logger. A message will be logged if the log level set to ERR or more.
+            ///@param message text to log at ERR level
             void error(std::string message);
+
+            ///Warning Level logger. A message will be logged if the log level set to WARNING or more.
+            ///@param message text to log at WARNING level
             void warning(std::string message);
+
+            ///Notice Level logger. A message will be logged if the log level set to NOTICE or more.
+            ///@param message text to log at NOTICE level
             void notice(std::string message);
+
+            ///Info Level logger. A message will be logged if the log level set to INFO or more.
+            ///@param message text to log at INFO level
             void info(std::string message);
+
+            ///Debug Level logger. A message will be logged if the log level set to DEBUG.
+            ///@param message text to log at DEBUG level
             void debug(std::string message);
 
-            //set level of log
+            ///Set level of logger
+            ///@param level level to which messages will be logged at
             void set_level(std::string level);
 
-            //view level of log
+            ///View level of log
+            ///@return current log level
             level get_level();
         private:
             //initialize the underlying log_level map

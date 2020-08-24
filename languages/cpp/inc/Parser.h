@@ -25,15 +25,28 @@
 namespace atom {
 
 namespace reply_type {
+    ///flat response: holds replies for XADD, XDEL, SET, XACK, etc.
+    ///The shared pointer points to buffer where the data begins, and size_t indicates the number of characters in the data.
     using flat_response = std::pair<std::shared_ptr<const char *>, size_t>;
+
+    ///entry response: holds replies from XRANGE, XREVRANGE, etc. 
+    ///map key is the Redis ID of the entry,
+    ///vector of flat_responses hold pointers to Redis keys and values with associated data sizes
     using entry_response = std::map<std::string, std::vector<flat_response>>;
+
+    ///entry response list: holds replies from XREAD, XREADGROUP, etc.
+    ///vector of entry maps, indexed by streams requested in outgoing command to Redis
     using entry_response_list = std::vector<entry_response>;
+
+    ///parsed reply: boost::variant of flat_response, entry_response, or entry_response_list
+    ///used as return type by Parser::process
     using parsed_reply = boost::variant<flat_response, entry_response, entry_response_list>;
 
+    ///Parsing options
     enum options {
-        flat_pair = 0,
-        entry_map = 1,
-        entry_maplist = 2
+        flat_pair = 0, ///< flat pair
+        entry_map = 1, ///< map of entries
+        entry_maplist = 2 ///< vector of entry maps
     };
 }
 
@@ -46,11 +59,23 @@ using buf_iter = boost::asio::buffers_iterator<
 
 public:
 
+    ///Constructor for Parser.
+    ///default logger stream set to std out and default logger name is "Parser"
     Parser() : logger(&std::cout, "Parser"){};
+
+    ///Constructor for Parser.
+    ///@param logstream stream to which to publish log messages to
+    ///@param logger_name name of log with which to identify messages that originate from Parser
     Parser(std::ostream & logstream, std::string logger_name): logger(&logstream, logger_name){};
     virtual ~Parser(){};
 
 
+    ///process raw buffer
+    ///@param buff buffer to parse
+    ///@param parse_option desired parsing type
+    ///@param err holds errors that may occur during parsing
+    ///@return parsed object, variant of atom::reply_type::flat_response, atom::reply_type::entry_response, 
+    ///or atom::reply_type::entry_response_list, depending on outgoing Redis command.
     atom::reply_type::parsed_reply 
     process(const buffer &buff, atom::reply_type::options parse_option, atom::error & err){
       
@@ -87,6 +112,8 @@ public:
       }
     }
 
+    ///Debug helper: logs contents of vector of entry maps
+    ///@param pointers_map object to debug
     void maplist_dbg(std::vector<std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>>> pointers_maplist){
         int counter=0;
         for(auto& v: pointers_maplist){
@@ -97,7 +124,8 @@ public:
         }
     }
 
-    //print map during debug
+    ///Debug helper: logs entry map
+    ///@param pointers_map object to debug
     void map_dbg(std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> pointers_map){
         logger.debug("...........begin................");
         for(auto& m: pointers_map){
@@ -110,7 +138,8 @@ public:
         logger.debug("............end................");
     }
 
-    //print flat pair during debug
+    ///Debug helper: logs contents of flat pairs
+    ///@param pointers_map object to debug
     void flat_dbg(atom::reply_type::flat_response pair){
         logger.debug("DATA: "+ std::string(*(pair.first),pair.second) +", SIZE: "+std::to_string(pair.second));
     }

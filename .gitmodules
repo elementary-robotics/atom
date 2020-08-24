@@ -40,3 +40,6 @@
 [submodule "languages/cpp/third-party/cpp-bredis"]
 	path = languages/cpp/third-party/cpp-bredis
 	url = https://github.com/basiliscos/cpp-bredis.git
+[submodule "languages/cpp/third-party/doxygen"]
+	path = languages/cpp/third-party/doxygen
+	url = https://github.com/doxygen/doxygen.git

@@ -16,8 +16,8 @@
 
 #include <boost/system/error_code.hpp>
 
-///Error codes specific to atom
 namespace atom {
+///Error codes specific to atom
     enum error_codes {
         no_error, ///< 0
         internal_error, ///< 1

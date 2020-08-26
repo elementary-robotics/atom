@@ -10,25 +10,32 @@
 
 #include "ConnectionPool.h"
 
-#include<iostream>
+#include <iostream>
 #include <functional>
 
 
 atom::ConnectionPool::ConnectionPool(boost::asio::io_context &iocon, 
                                      int max_connections, 
                                      int timeout,
-                                     std::string redis_ip) : iocon(iocon),
+                                     std::string redis_ip,
+                                     int num_buffers,
+                                     int buffer_timeout) : iocon(iocon),
                                                             logger(&std::cout, "Connection Pool"),
                                                             max_connections(max_connections),
                                                             timeout(timeout),
                                                             redis_ip(redis_ip),
                                                             open_tcp_connections(0),
-                                                            open_unix_connections(0){ }
+                                                            open_unix_connections(0),
+                                                            buffer_timeout(buffer_timeout),
+                                                            num_buffers(num_buffers)
+                                                            { }
 
 atom::ConnectionPool::ConnectionPool(boost::asio::io_context &iocon, 
                                      int max_connections, 
                                      int timeout,
                                      std::string redis_ip,
+                                     int num_buffers,
+                                     int buffer_timeout,
                                      std::ostream & logstream,
                                      std::string logger_name) : iocon(iocon),
                                                             logger(&logstream, logger_name),
@@ -36,7 +43,9 @@ atom::ConnectionPool::ConnectionPool(boost::asio::io_context &iocon,
                                                             timeout(timeout),
                                                             redis_ip(redis_ip),
                                                             open_tcp_connections(0),
-                                                            open_unix_connections(0){ }
+                                                            open_unix_connections(0),
+                                                            buffer_timeout(buffer_timeout),
+                                                            num_buffers(num_buffers){ }
 
 void atom::ConnectionPool::init(int num_unix, int num_tcp){
     if(num_tcp + num_unix > max_connections){
@@ -118,11 +127,11 @@ void atom::ConnectionPool::release_connection(std::shared_ptr<atom::ConnectionPo
 }
 
 std::shared_ptr<atom::ConnectionPool::UNIX_Redis>  atom::ConnectionPool::make_unix(){
-    return std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock");
+    return std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock", num_buffers, buffer_timeout);
 }
 
 std::shared_ptr<atom::ConnectionPool::TCP_Redis>  atom::ConnectionPool::make_tcp(std::string redis_ip){
-    return std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, redis_ip, 6379);
+    return std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, redis_ip, 6379, num_buffers, buffer_timeout);
 }
 
 void atom::ConnectionPool::resize_unix(){

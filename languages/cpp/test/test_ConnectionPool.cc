@@ -22,17 +22,17 @@ class ConnectionPoolTest : public testing::Test {
 
 public:
 
-    ConnectionPoolTest() :  mock_connection_pool(iocon, 100, "172.24.0.2"){
+    ConnectionPoolTest() :  ip("172.20.0.2"), mock_connection_pool(iocon, 100, ip){
     }
 
 	virtual void SetUp() {
         EXPECT_CALL(mock_connection_pool, make_unix())
             .Times(5)
-            .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock") ));
+            .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock", num_buffers, buffer_timeout ) ));
 
-        EXPECT_CALL(mock_connection_pool, make_tcp(::testing::StrEq("172.24.0.2")))
+        EXPECT_CALL(mock_connection_pool, make_tcp(::testing::StrEq(ip)))
             .Times(5)
-            .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, "172.24.0.2", 6379) ));
+            .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, ip, 6379, num_buffers, buffer_timeout ) ));
         
         mock_connection_pool.init(5, 5);
 
@@ -48,20 +48,23 @@ public:
     }
     
     boost::asio::io_context iocon;
+    std::string ip;
+    int num_buffers = 20;
+    int buffer_timeout = 1;
     MockConnectionPool mock_connection_pool;
     
 };
 
 TEST_F(ConnectionPoolTest, init_ConnectionPool){
-    MockConnectionPool mock_CP(iocon, 10, "172.24.0.2");
+    MockConnectionPool mock_CP(iocon, 10, ip);
 
     EXPECT_CALL(mock_CP, make_unix())
         .Times(5)
-        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock") ));
+        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock", num_buffers, buffer_timeout ) ));
 
-    EXPECT_CALL(mock_CP, make_tcp(::testing::StrEq("172.24.0.2")))
+    EXPECT_CALL(mock_CP, make_tcp(::testing::StrEq(ip)))
         .Times(5)
-        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, "172.24.0.2", 6379) ));
+        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, ip, 6379, num_buffers, buffer_timeout ) ));
 
     mock_CP.init(5, 5);
 
@@ -134,9 +137,9 @@ TEST_F(ConnectionPoolTest, test_tcp_resize){
     std::vector<std::thread> threads;
 
     //expect to double the number of connections available
-    EXPECT_CALL(mock_connection_pool, make_tcp(::testing::StrEq("172.24.0.2")))
+    EXPECT_CALL(mock_connection_pool, make_tcp(::testing::StrEq(ip)))
         .Times(5)
-        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, "172.24.0.2", 6379) ));
+        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, ip, 6379, num_buffers, buffer_timeout ) ));
 
 
     for(int i = 0; i < 6; i++){
@@ -159,7 +162,7 @@ TEST_F(ConnectionPoolTest, test_unix_resize){
     //expect to double the number of connections available
     EXPECT_CALL(mock_connection_pool, make_unix())
         .Times(5)
-        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock") ));
+        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock", num_buffers, buffer_timeout ) ));
 
 
     for(int i = 0; i < 6; i++){
@@ -177,15 +180,15 @@ TEST_F(ConnectionPoolTest, test_unix_resize){
 
 TEST_F(ConnectionPoolTest, test_tcp_wait){
 
-    MockConnectionPool mock_CP(iocon, 10, "172.24.0.2");
+    MockConnectionPool mock_CP(iocon, 10, ip);
 
     EXPECT_CALL(mock_CP, make_unix())
         .Times(5)
-        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock") ));
+        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::UNIX_Redis>(iocon, "/shared/redis.sock", num_buffers, buffer_timeout ) ));
 
-    EXPECT_CALL(mock_CP, make_tcp(::testing::StrEq("172.24.0.2")))
+    EXPECT_CALL(mock_CP, make_tcp(::testing::StrEq(ip)))
         .Times(5)
-        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, "172.24.0.2", 6379) ));
+        .WillRepeatedly(::testing::Return(std::make_shared<atom::ConnectionPool::TCP_Redis>(iocon, ip, 6379, num_buffers, buffer_timeout ) ));
 
     mock_CP.init(5, 5);
 

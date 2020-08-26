@@ -267,7 +267,6 @@ private:
                 if(!inner_data.empty()){
                     logger.debug("process_entry| updating parsed map: ");
                     parsed_map.insert({id, inner_data});
-                    map_dbg(parsed_map);
                 }
                 
             }//for each entry
@@ -291,7 +290,7 @@ private:
         logger.debug("process_entry| found streams: " + std::to_string(num_streams));
 
         auto start = data;
-        for(int stream=0; stream < num_streams; stream++){ //iterate through the streams
+        for(size_t stream=0; stream < num_streams; stream++){ //iterate through the streams
             std::string stream_name;
             bool stream_name_read = false;
             bool stream_read = false;

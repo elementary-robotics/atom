@@ -41,17 +41,21 @@ public:
     ///@param max_connections maximum number of connections to make to Redis Server
     ///@param timeout time in milliseconds to wait for a connection to be available for use
     ///@param redis_ip IP address for Redis Server (IP of nucleus docker container)
-    ConnectionPool(boost::asio::io_context &iocon, int max_connections, int timeout, std::string redis_ip);
+    ///@param buffer_timeout timeout for BufferPool, time in milliseconds to wait for buffer to become available
+    ///@param num_buffers number of buffers for BufferPool belonging to each Redis connection
+    ConnectionPool(boost::asio::io_context &iocon, int max_connections, int timeout, std::string redis_ip, int num_buffers, int buffer_timeout);
 
     ///Constructor for ConnectionPool
     ///@param iocon io context
     ///@param max_connections maximum number of connections to make to Redis Server
     ///@param timeout time in milliseconds to wait for a connection to be available for use
     ///@param redis_ip IP address for Redis Server (IP of nucleus docker container)
+    ///@param buffer_timeout timeout for BufferPool, time in milliseconds to wait for buffer to become available
+    ///@param num_buffers number of buffers for BufferPool belonging to each Redis connection
     ///@param logstream stream to which to publish log messages to
     ///@param logger_name name of log with which to identify messages that originate from ConnectionPool
     ConnectionPool(boost::asio::io_context &iocon, int max_connections, int timeout, std::string redis_ip, 
-                    std::ostream & logstream, std::string logger_name);
+                    int num_buffers, int buffer_timeout, std::ostream & logstream, std::string logger_name);
 
     ///Initializes the connection pool, creates the number of unix and tcp connections requested. 
     //Throws if combined number of connections requested is more than max_connections
@@ -136,6 +140,8 @@ private:
     std::deque<std::shared_ptr<TCP_Redis>> tcp_connections;
     std::mutex mutex;
     std::condition_variable cond_var;
+    int buffer_timeout;
+    int num_buffers;
 
 };
 

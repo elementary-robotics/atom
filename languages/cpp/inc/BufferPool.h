@@ -20,6 +20,7 @@
 #include <boost/asio.hpp>
 
 #include "Logger.h"
+#include "config.h"
 
 namespace atom {
 
@@ -30,6 +31,7 @@ public:
     /// used in BufferPool
     pooled_buffer() : ref_counter(0){};
     pooled_buffer(const pooled_buffer&) = delete;
+    pooled_buffer(std::shared_ptr<pooled_buffer> move) : ref_counter(move->ref_counter) {};
 
     virtual ~pooled_buffer(){};
 
@@ -46,7 +48,7 @@ public:
             ref_counter--;
         }
         else{
-            cleanup();
+            //TODO: how to handle this case?
         }
     }
 
@@ -56,13 +58,16 @@ public:
         return ref_counter;
     }
 
-private:
-
-    void cleanup(){
-        //TODO
+    ///Consume buffer
+    ///@param size bytes to consume in buffer
+    void consume(size_t size){
+        io_buff.consume(size);
     }
 
     buffer io_buff;
+
+private:
+    
     int ref_counter;
 };
 
@@ -153,8 +158,9 @@ std::shared_ptr<atom::pooled_buffer<buffer>> get_buffer(){
 ///Decrement a reference to a buffer instance.
 ///After releasing a buffer, that buffer is not guaranteed to be available for use, and the user must call get_buffer() to get a buffer to work with.
 ///@param buf a shared pointer to the pooled buffer to decrement
-void release_buffer(std::shared_ptr<atom::pooled_buffer<buffer>> buf){
+void release_buffer(std::shared_ptr<atom::pooled_buffer<buffer>> buf, size_t size){
     std::unique_lock<std::mutex> lock(mutex);
+    buf->consume(size);
     buf->remove_ref();
     num_available++;
     cond_var.notify_one();

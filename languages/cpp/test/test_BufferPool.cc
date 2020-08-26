@@ -103,7 +103,7 @@ TEST_F(BufferPoolTest, wait_for_buf){
         threads.push_back(std::thread([&] {auto buf = BP.get_buffer();}));
     }
     
-    threads.push_back(std::thread([&] {BP.release_buffer(buf);}));
+    threads.push_back(std::thread([&] {BP.release_buffer(buf, 0);}));
 
     for(auto& t : threads){
         t.join();

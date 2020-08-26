@@ -31,7 +31,7 @@ public:
     using Iterator = typename bredis::to_iterator<Buffer>::iterator_t;
     using Policy = bredis::parsing_policy::keep_result;
 
-    SerializationTest() :  serialization(), redis(io_con, "/shared/redis.sock"){
+    SerializationTest() :  serialization(), redis(io_con, "/shared/redis.sock", 20, 500){
 
     }
 
@@ -87,30 +87,30 @@ TEST_F(SerializationTest, deserialize_msgpack){
 
     //send serialized data via redis    
     atom::error err;
-    const atom::redis_reply reply = redis.xadd(stream_name, "test_msgpack", buff, err);
+    atom::redis_reply<boost::asio::streambuf> reply = redis.xadd(stream_name, "test_msgpack", buff, err);
     if(err){
         FAIL();
     }
 
     //grab the id
-    std::vector<std::string> out1 = redis.tokenize(*reply.data.get(), "\r\n");
-    id = out1[1];
+    auto out1 = boost::get<atom::reply_type::flat_response>(reply.parsed_reply);
+    id = std::string(*out1.first.get(), out1.second);
 
-    redis.release_rx_buffer(reply.size); 
+    redis.release_rx_buffer(reply); 
 
     //read serialized data via redis    
     err.clear();
-    const atom::redis_reply reply_ = redis.xrange(stream_name, id, "+", "1", err);
+    atom::redis_reply<boost::asio::streambuf> reply_ = redis.xrange(stream_name, id, "+", "1", err);
     if(err){
         FAIL();
     }
-    std::vector<std::string> out2 = redis.tokenize(*reply_.data.get(), "\r\n");    
-    redis.release_rx_buffer(reply_.size); 
+    auto out2 = boost::get<atom::reply_type::entry_response>(reply_.parsed_reply);
 
     //test the deserialization:
-    std::stringstream serialized_msgpack(out2.back());
+    std::stringstream serialized_msgpack(*out2[id][1].first.get());
     my_type deserialized = serialization.deserialize<my_type, std::stringstream>(serialized_msgpack);
-
+    
+    redis.release_rx_buffer(reply_); 
     //expect that data read back from redis is equivalent to the data we sent
     EXPECT_EQ(deserialized, test_data);
 }

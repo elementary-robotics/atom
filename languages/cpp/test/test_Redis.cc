@@ -102,6 +102,31 @@ TEST_F(RedisTest, xadd){
     redis_con.release_rx_buffer(reply);
 }
 
+//test stream command XADD with serialization - nominal
+TEST_F(RedisTest, xadd_vector){
+    atom::error err;
+
+    redis_con.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+    std::vector<std::string> test_data;
+    for(int i=0; i< 4; i++){
+        test_data.push_back("key_" + std::to_string(i));
+        test_data.push_back("value_" + std::to_string(i));
+    }
+
+    atom::error xadd_err;
+    atom::redis_reply<Buffer> reply = redis_con.xadd("test_stream", "none", test_data, xadd_err);
+    auto data = boost::get<atom::reply_type::flat_response>(reply.parsed_reply);
+
+    EXPECT_THAT(xadd_err.code(), atom::error_codes::no_error);
+    EXPECT_THAT(*data.first.get(), ::testing::ContainsRegex("\\d*\\-\\d?"));
+    EXPECT_THAT(data.second, ::testing::Eq(15));
+
+    //release buffer
+    redis_con.release_rx_buffer(reply);
+}
+
 //test stream command XADD - redis error detection
 TEST_F(RedisTest, xadd_redis_err){
     atom::error err;
@@ -131,6 +156,29 @@ TEST_F(RedisTest, xrange){
     
     atom::error xrange_err;
     atom::redis_reply<Buffer> reply = redis_con.xrange("test_stream", "-", "+", "2", xrange_err); //TODO fix the case where count > 1
+    auto data = boost::get<atom::reply_type::entry_response>(reply.parsed_reply);
+
+    EXPECT_THAT(xrange_err.code(), atom::error_codes::no_error);
+    for(auto m: data){
+        EXPECT_THAT(m.first, ::testing::ContainsRegex("[0-9]{1,13}-[0-9]?"));
+        for(auto p: m.second){
+            EXPECT_THAT(p.second,::testing::Ge(0));
+        }
+    }
+
+    //release buffer
+    redis_con.release_rx_buffer(reply);
+}
+
+//test stream command XRANGE - nominal
+TEST_F(RedisTest, xrevrange){
+    atom::error err;
+
+    redis_con.connect(err);
+    EXPECT_THAT(err.message(), "Success");
+    
+    atom::error xrange_err;
+    atom::redis_reply<Buffer> reply = redis_con.xrevrange("test_stream", "+", "-", "2", xrange_err); //TODO fix the case where count > 1
     auto data = boost::get<atom::reply_type::entry_response>(reply.parsed_reply);
 
     EXPECT_THAT(xrange_err.code(), atom::error_codes::no_error);

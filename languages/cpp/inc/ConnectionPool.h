@@ -21,19 +21,21 @@ class ConnectionPool {
 
 public:
 
+    using Buffer_Type = boost::asio::streambuf;
+
     ///TCP_Redis
     ///templated Redis type for TCP connections
     using TCP_Redis = atom::Redis<boost::asio::ip::tcp::socket,
                                     boost::asio::ip::tcp::endpoint,
-                                    boost::asio::streambuf,
-                                    typename bredis::to_iterator<boost::asio::streambuf>::iterator_t,
+                                    Buffer_Type,
+                                    typename bredis::to_iterator<Buffer_Type>::iterator_t,
                                     bredis::parsing_policy::keep_result>;
     ///UNIX_Redis
     ///templated Redis type for UNIX connections
     using UNIX_Redis = atom::Redis<boost::asio::local::stream_protocol::socket,
                                     boost::asio::local::stream_protocol::endpoint,
-                                boost::asio::streambuf,
-                                typename bredis::to_iterator<boost::asio::streambuf>::iterator_t,
+                                Buffer_Type,
+                                typename bredis::to_iterator<Buffer_Type>::iterator_t,
                                 bredis::parsing_policy::keep_result>;
 
     ///Constructor for ConnectionPool

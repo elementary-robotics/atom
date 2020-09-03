@@ -20,49 +20,12 @@
 #include "Serialization.h"
 #include "Redis.h"
 #include "Logger.h"
+#include "Messages.h"
 
 
 namespace atom{
 
-///An entry is a portion of a reply from Redis. It encompasses a Redis ID and 
-///@param field the ID of the reply
-///@param data a pointer to the beginning of the data belonging to this entry.
-struct entry {
-    std::string field;
-    std::shared_ptr<const char *> data;
-
-    entry(std::string field, std::shared_ptr<const char *> data) : field(field),
-                                                        data(std::move(data)){};
-};
-
-///Holds a response from a Server_Element. 
-///@param data response data
-///@param serialization_method string that indicates which serialization method to use. Currently only msgpack is supported.
-///@param err holds error code and msg information, if any errors occur.
-struct element_response {
-    std::shared_ptr<const char *> data;
-    std::string serialization_method;
-    atom::error err;
-
-    element_response(std::shared_ptr<const char *> data, 
-                    std::string method, atom::error err) : data(data),
-                                                        serialization_method(method),
-                                                        err(err){};
-};
-
-///function signature for a stream handler, params are element_name and stream_name
-typedef std::function<void(std::string, std::string)> StreamHandler;
-
-///function signature for read handler, params are an entry and user-supplied data
-typedef std::function<bool(entry&, void*)> ReadHandler;
-
-///function signature for command handler, params are redis reply, element response, and error 
-typedef std::function<element_response(atom::redis_reply&, element_response&, atom::error&)> CommandHandler;
-
-///function signature for health checking - TODO: MOVE THIS TO THE SERVER ELEMENT
-typedef std::function<element_response(void *)> HealthChecker;
-
-template<typename ConnectionType>
+template<typename ConnectionType, typename BufferType>
 class Client_Element {
 
 public:
@@ -75,11 +38,17 @@ public:
 ///@param max_cons maximum number of connections to be made to Redis Server
 ///@param timeout timeout in milliseconds to wait for a connection to Redis Server to be released via the connection pool
 ///@param serialization instance of serialization class
+///@param num_buffs number of buffers to allocate for BufferPool
+///@param buffer_timeout timeout in milliseconds to wait for a buffer to become available
 ///@param log_stream stream to which to publish log messages
 ///@param element_name name of the client element
 Client_Element(boost::asio::io_context & iocon, int max_cons, int timeout, std::string redis_ip, 
-                Serialization serialization, std::ostream& log_stream, std::string element_name);
-~Client_Element();
+                Serialization& serialization, int num_buffs, int buff_timeout,
+                int num_tcp, int num_unix, 
+                std::ostream& log_stream, std::string element_name);
+
+///Destructor for Client_Element
+virtual ~Client_Element();
 
 ///Read at most n entries from an element's stream
 ///@param element_name Name of the element the stream belongs to
@@ -87,7 +56,7 @@ Client_Element(boost::asio::io_context & iocon, int max_cons, int timeout, std::
 ///@param num_entries Number of entries to get
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-atom::redis_reply entry_read_n(std::string element_name, std::string stream_name, 
+atom::redis_reply<BufferType> entry_read_n(std::string element_name, std::string stream_name, 
                                 int num_entries, atom::error & err, std::string serialization="", 
                                 bool force_serialization=false);
 
@@ -100,7 +69,7 @@ atom::redis_reply entry_read_n(std::string element_name, std::string stream_name
 ///       If set to 0, all entries will be returned. If set to $, only new entries past the function call will be returned.
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-atom::redis_reply entry_read_since(std::string element_name, std::string stream_name, 
+atom::redis_reply<BufferType> entry_read_since(std::string element_name, std::string stream_name, 
                                 int num_entries, atom::error & err, std::string last_id="0",
                                 std::string serialization="", bool force_serialization=false);
 
@@ -114,7 +83,7 @@ atom::redis_reply entry_read_since(std::string element_name, std::string stream_
 ///@param block Optional argument, defaults to 0 to block forever. specifies the time (ms) to block on the read
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-atom::redis_reply entry_read_since(std::string element_name, std::string stream_name, 
+atom::redis_reply<BufferType> entry_read_since(std::string element_name, std::string stream_name, 
                                 int num_entries, atom::error & err, std::string last_id="0",
                                 std::chrono::milliseconds block = std::chrono::milliseconds(0),
                                 std::string serialization="", bool force_serialization=false);
@@ -195,6 +164,9 @@ void wait_for_healthcheck(std::vector<std::string> element_names);
 
 
 private:
+
+///get serialization method from response
+std::tuple<atom::Serialization::method, int> get_serialization_method(std::vector<atom::reply_type::flat_response>& entry_data);
 
 ///response id creation helper
 std::string make_response_id(std::string element_name);

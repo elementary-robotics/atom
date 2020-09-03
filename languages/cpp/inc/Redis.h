@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <utility>
 
 #include <bredis.hpp>
 #include <bredis/Connection.hpp>
@@ -156,6 +157,8 @@ class Redis {
             sock->connect(ep, err);
             if(!err){
                 wrap_socket();
+            } else{
+                logger.alert("Socket connection error: " + err.message());
             }
         }
 
@@ -187,11 +190,27 @@ class Redis {
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
-        // xadd operation with stringstream - used for msgpack serialized types
+        // xadd operation with stringstream - used for single msgpack serialized types - TODO: determine if this call should be removed
         atom::redis_reply<buffer> xadd(std::string stream_name, std::string field, std::stringstream & data, atom::error & err){
             std::string str = data.str();
             const char * msgpack_data = str.c_str();
-            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, msgpack_data }, err);
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", "ser", "msgpack", field, msgpack_data }, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
+        }
+
+        // xadd operation with vector argument
+        atom::redis_reply<buffer> xadd(std::string stream_name, std::string method, std::vector<std::string>& entry_map, atom::error & err){
+            std::vector<std::string> command = {"XADD", stream_name, "*", "ser", method};
+            command.insert(command.end(), entry_map.begin(), entry_map.end());
+            
+            bredis_con->write(bredis::single_command_t{command.cbegin(), command.cend()}, err);
+            return read_reply(atom::reply_type::options::flat_pair, err);
+        }
+
+        // xadd operation with multiple key value pairs - {NOT TESTED}
+        template<typename ... ArgTypes>
+        atom::redis_reply<buffer> xadd(std::string stream_name, atom::error & err, ArgTypes ... args){
+            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", &args...}, err);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
@@ -296,7 +315,7 @@ class Redis {
                 if(!err){
                     redis_check(result_markers, err);
                     if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
+                        //const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
                         if(process_resp){
                             atom::reply_type::parsed_reply parsed = parser.process(pooled_buffer->io_buff, parse_option, err);
                             return atom::redis_reply<buffer>(result_markers.consumed, 

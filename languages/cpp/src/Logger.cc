@@ -2,7 +2,7 @@
 //
 //  @file Logger.cc
 //
-//  @brief Logger implementation
+//  @brief Logger implementation - TODO: to_simple_wstring for date-time format
 //
 //  @copy 2020 Elementary Robotics. All rights reserved.
 //

@@ -17,6 +17,7 @@
 #include <typeinfo>
 
 #include <boost/tokenizer.hpp>
+#include <boost/variant.hpp>
 #include <msgpack.hpp>
 
 #include "Logger.h"
@@ -28,7 +29,13 @@
 namespace atom {
     class Serialization {
     public:
-    
+        ///Serialization methods supported by atom
+        enum method {
+            none, ///< no serialization
+            msgpack, ///< msgpack c++ serialization
+            arrow ///< arrow (not supported yet)
+        };
+
         Serialization() : logger(&std::cout, "Serializer"){}
         Serialization(std::ostream& logstream, std::string log_name) : logger(&logstream, log_name){}
 

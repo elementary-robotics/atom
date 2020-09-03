@@ -10,4 +10,8 @@ enum params {
     BUFFER_CAP=20///<20 max number of buffers in BufferPool
 };
 
+///Version and Language information for atom (TODO what version is this?)
+#define LANGUAGE "c++11"
+#define VERSION "0"
+
 }

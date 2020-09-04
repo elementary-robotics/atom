@@ -76,6 +76,26 @@ TEST_F(ServerElementTest, entry_write_msgpack){
     }
 }
 
+TEST_F(ServerElementTest, entry_write_msgpack_variant){
+
+    atom::error err;
+    std::vector<msgpack::type::variant> arr{1,2,3}; 
+    std::vector<msgpack::type::variant> entry_data;
+    entry_data.push_back("key");
+    entry_data.push_back(10);
+    entry_data.push_back("what");
+    entry_data.push_back("string it is!");
+    entry_data.push_back("hi");
+    entry_data.push_back(111.000111);
+    entry_data.push_back("arr");
+    entry_data.push_back(arr);
+
+    server_elem.entry_write("server_stream", entry_data, atom::Serialization::method::msgpack, err);
+    if(err){
+        std::cout << err.message() << std::endl;
+    }
+}
+
 TEST_F(ServerElementTest, entry_write_invalid_key){
 
     atom::error err;

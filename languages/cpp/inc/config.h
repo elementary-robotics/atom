@@ -1,4 +1,16 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+//  @file config.h
+//
+//  @brief config header, holds atom configuration information
+//
+//  @copy 2020 Elementary Robotics. All rights reserved.
+//
+////////////////////////////////////////////////////////////////////////////////
 
+
+#ifndef __ATOM_CPP_CONFIG_H
+#define __ATOM_CPP_CONFIG_H
 
 namespace atom{
 
@@ -18,3 +30,5 @@ enum params {
 #define MSGPACK_USE_BOOST 1
 
 }
+
+#endif //__ATOM_CPP_CONFIG_H

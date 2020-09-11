@@ -2,7 +2,7 @@
 //
 //  @file Server_Element.h
 //
-//  @brief Server_Element header, represents a hardware elements
+//  @brief Server_Element header, represents a unique element
 //
 //  @copy 2020 Elementary Robotics. All rights reserved.
 //
@@ -79,48 +79,8 @@ class Server_Element {
 
             //add stream
             streams.push_back(stream_name);
-
-            //serialize
-            switch(ser_method){
-                case atom::Serialization::method::msgpack:
-                {
-                    //serialize the values (leave the keys alone)
-                    std::vector<std::string> processed_data;
-                    bool is_value = false;
-                    for(auto m: entry_data){
-                        if(is_value){
-                            std::stringstream serialized_data;
-                            ser.serialize(m, serialized_data);
-                            processed_data.push_back(serialized_data.str());
-                        } else{
-                            std::string key = boost::get<std::string>(m);
-                            processed_data.push_back(key);
-                        }
-                        is_value = !is_value;
-                    }
-
-                    return connection->xadd(stream_name, "msgpack", processed_data, err);
-                }
-                case atom::Serialization::method::none:
-                {   
-                    std::vector<std::string> processed_data;
-                    try {
-                    std::for_each(entry_data.cbegin(), entry_data.cend(), [&](const msgpack::type::variant & elem) {
-                                    processed_data.push_back(boost::get<std::string>(elem));});
-                    } catch(boost::bad_get) {
-                        logger.alert("Must supply data composed only of strings when Serialization::none is selected");
-                        throw std::runtime_error("Must supply data composed only of strings when Serialization::none is selected");
-                    }
-                    return connection->xadd(stream_name, "none", processed_data, err);
-                }
-                case atom::Serialization::method::arrow:
-                {          
-                    err.set_error_code(atom::error_codes::unsupported_command);
-                    return atom::redis_reply<BufferType>(0, nullptr);
-                }
-                default:
-                    throw std::runtime_error("Supplied serialization option is invalid.");
-            }
+            auto processed_data = ser.serialize(entry_data, ser_method, err);
+            return connection->xadd(stream_name, ser.method_strings.at(ser_method), processed_data, err);
         };
 
     private:

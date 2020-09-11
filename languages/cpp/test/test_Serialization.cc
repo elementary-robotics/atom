@@ -68,7 +68,7 @@ TEST_F(SerializationTest, serialize_msgpack){
     my_type test_data(100, false, "Hello World!");
 
     std::stringstream buff;
-    serialization.serialize<my_type, std::stringstream>(test_data, buff);
+    serialization.serialize_msgpack<my_type, std::stringstream>(test_data, buff);
 
     EXPECT_THAT(buff.str(), ::testing::HasSubstr("d\xC2\xACHello World!"));
 }
@@ -82,7 +82,7 @@ TEST_F(SerializationTest, deserialize_msgpack){
 
     //serialize here
     std::stringstream buff;
-    serialization.serialize<my_type, std::stringstream>(test_data, buff);
+    serialization.serialize_msgpack<my_type, std::stringstream>(test_data, buff);
     EXPECT_THAT(buff.str(), ::testing::HasSubstr("d\xC2\xACHello World!"));
 
     //send serialized data via redis    
@@ -107,8 +107,8 @@ TEST_F(SerializationTest, deserialize_msgpack){
     auto out2 = boost::get<atom::reply_type::entry_response>(reply_.parsed_reply);
 
     //test the deserialization:
-    std::stringstream serialized_msgpack(*out2[id][1].first.get());
-    my_type deserialized = serialization.deserialize<my_type, std::stringstream>(serialized_msgpack);
+    std::stringstream serialized_msgpack(*out2[id][3].first.get());
+    auto deserialized = serialization.deserialize_msgpack<my_type, std::stringstream>(serialized_msgpack);
     
     redis.release_rx_buffer(reply_); 
     //expect that data read back from redis is equivalent to the data we sent

@@ -24,7 +24,8 @@
 
 #include "Logger.h"
 #include "Error.h"
-
+#include "Parser.h"
+#include "Messages.h"
 
 
 
@@ -88,6 +89,7 @@ namespace atom {
                 }
                 case atom::Serialization::method::arrow:
                 {          
+                    logger.alert("Arrow serialization not supported!");
                     err.set_error_code(atom::error_codes::unsupported_command);
                     return std::vector<std::string>{"arrow unsupported"};
                 }
@@ -97,16 +99,39 @@ namespace atom {
 
         }
 
+        template<typename DataType>
+        atom::entry_type::object<DataType> deserialize(atom::reply_type::flat_response& resp, atom::Serialization::method ser_method, atom::error & err){
+            switch(ser_method){
+                case atom::Serialization::msgpack:
+                {   
+                    std::string data_str(*resp.first.get(), resp.second);
+                    DataType deser_data = deserialize_msgpack<DataType>(data_str);
+                    return atom::entry_type::object<DataType>(std::make_shared<DataType>(deser_data), resp.second);
+                }
+                case atom::Serialization::none:
+                {
+                    //TODO: handle buffer-lifecycle - so that it exists and is updated via the buffer pool when the entry takes ownership of it
+                    return atom::entry_type::object<DataType>(resp.first, resp.second);
+                }
+                case atom::Serialization::arrow:
+                {
+                    logger.alert("Arrow deserialization not supported!");
+                    err.set_error_code(atom::error_codes::unsupported_command);
+                }
+                default:
+                    throw std::runtime_error("Supplied deserialization option is invalid.");
+            }
+        }
+
         //streamType should support write(const char*, size_t)
         template<typename MsgPackType, typename streamType> 
         void serialize_msgpack(MsgPackType data, streamType & stream){
             msgpack::pack(stream, data);
         }
 
-        //deserialize msgpack & convert into original msgpack type
-        template <typename MsgPackType, typename streamType>
-        MsgPackType deserialize_msgpack(streamType & data){
-            std::string str(data.str());
+        //deserialize msgpack & convert into original msgpack type       
+        template <typename MsgPackType>
+        MsgPackType deserialize_msgpack(std::string& str){
             msgpack::object_handle obj_handle = msgpack::unpack(str.data(), str.size());
             try{
                 MsgPackType data = obj_handle.get().as<MsgPackType>();
@@ -116,7 +141,14 @@ namespace atom {
                 return MsgPackType();
             }
         }
-
+        
+        //deserialize msgpack & convert into original msgpack type
+        template <typename MsgPackType, typename streamType>
+        MsgPackType deserialize_msgpack(streamType & data){
+            std::string str(data.str());
+            return deserialize_msgpack<MsgPackType>(str);
+        }
+        
     const std::map<method, std::string> method_strings;
 
     private:

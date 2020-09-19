@@ -2,7 +2,7 @@
 //
 //  @file Client_Element.h
 //
-//  @brief Client_Element implementation, used to communicate with other elements
+//  @brief Client_Element implementation, used to communicate with Server_Element elements
 //         through Redis
 //
 //  @copy 2020 Elementary Robotics. All rights reserved.
@@ -56,9 +56,53 @@ virtual ~Client_Element();
 ///@param num_entries Number of entries to get
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-atom::redis_reply<BufferType> entry_read_n(std::string element_name, std::string stream_name, 
+///@tparam DataType Optional argument, specify if a serialization method other than atom::Serialization::none is desired
+template<typename DataType = const char *>
+std::vector<atom::entry<DataType, BufferType>> entry_read_n(std::string element_name, std::string stream_name, 
                                 int num_entries, atom::error & err, std::string serialization="", 
-                                bool force_serialization=false);
+                                bool force_serialization=false){
+
+
+    std::vector<atom::entry<DataType, BufferType>> entries;
+    std::string stream_id = make_stream_id(element_name, stream_name);
+    atom::redis_reply<BufferType> reply = connection->xrevrange(stream_id, "+", "-", std::to_string(num_entries), err);
+
+    if(err){
+        logger.error("Error: " + err.message());
+        return entries;
+    }
+
+    atom::reply_type::entry_response data = reply.entry_response();
+    for(auto & entry_map: data){
+        std::string uid = entry_map.first;
+        atom::entry<DataType, BufferType> single_entry(uid);
+
+        //find the serialization method
+        std::tuple<atom::Serialization::method,int> method = get_serialization_method(entry_map.second);
+        atom::Serialization::method ser_method = std::get<0>(method);
+        logger.debug("Serialization method found: " + ser.method_strings.at(ser_method) );
+                
+
+        int position = std::get<1>(method);
+        bool is_val = true;
+
+        //deserialize it
+        for(size_t i = position; i < entry_map.second.size(); i++){
+            if(is_val){ 
+                atom::entry_type::object<DataType> deser = ser.deserialize<DataType>(entry_map.second[i], ser_method, err);
+                single_entry.data.push_back(deser);
+            } else{
+                auto key = std::make_shared<std::string>(atom::reply_type::to_string(entry_map.second[i]));
+                single_entry.data.push_back(atom::entry_type::object<DataType>(key, entry_map.second[i].second));
+            }
+            is_val = !is_val;
+        }
+        entries.push_back(single_entry);
+    }
+
+    connection->release_rx_buffer(reply);
+    return entries;
+}
 
 
 ///Read entries from an element's stream since a given last_id
@@ -187,7 +231,7 @@ ConnectionPool pool;
 std::shared_ptr<ConnectionType> connection;
 
 ///serialization
-Serialization serialization;
+Serialization ser;
 
 ///logging
 Logger logger;

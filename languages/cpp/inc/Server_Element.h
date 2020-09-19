@@ -41,7 +41,7 @@ class Server_Element {
         ///@param entry_data vector of redis keys and values to write to redis. Key value pairs must be specified in sequence.
         ///@param ser_method the serialization method to use
         ///@param err to hold errors that may occur during this operation
-        ///@tparam DataType can be std::vector<msgpack::type::variant> or std::vector<std::string> for no serialization
+        ///@tparam DataType can be std::vector<msgpack::type::variant> or std::vector<std::string> for no serialization or msgpack serialization, and in the future arrow for arrow serialization
         template<typename DataType>
         atom::redis_reply<BufferType> entry_write(std::string stream_name,  
                                 DataType& entry_data, atom::Serialization::method ser_method, atom::error& err){

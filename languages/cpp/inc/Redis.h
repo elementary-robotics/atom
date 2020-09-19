@@ -33,68 +33,13 @@
 #include "Logger.h"
 #include "Parser.h"
 #include "BufferPool.h"
+#include "Messages.h"
 
 using bytes_t = char;
 
 namespace atom {
 
-///Stores replies from Redis read into the buffer
-///@param size total size of the read data
-///@param data_buffer pointer to the underlying pooled_buffer
-///@param parsed_reply the object containing pointers to relevant portions of the underlying buffer
-template<typename buffer>
-struct redis_reply {
-    const size_t size;
-    std::shared_ptr<atom::pooled_buffer<buffer>> data_buff;
-    reply_type::parsed_reply parsed_reply;
-    
-    redis_reply(size_t n, std::shared_ptr<atom::pooled_buffer<buffer>> b) : size(n), data_buff(std::move(b)){}
-    redis_reply(size_t n, std::shared_ptr<atom::pooled_buffer<buffer>> b, reply_type::parsed_reply parsed_reply) : size(n), 
-                                                                                        data_buff(std::move(b)),
-                                                                                        parsed_reply(parsed_reply){}
 
-    ///Release the ownership of parsed_reply.
-    ///This function will cleanup the member parsed_reply without requiring the user to specify its type.
-    void cleanup(){
-        try {
-           cleanup(boost::get<atom::reply_type::flat_response>(parsed_reply));
-        } catch(boost::bad_get & ec){
-            try {
-                cleanup(boost::get<atom::reply_type::entry_response>(parsed_reply));
-            } catch(boost::bad_get & ec){
-                cleanup(boost::get<atom::reply_type::entry_response_list>(parsed_reply));
-            }
-        }
-    }
-
-    ///release the ownership of shared pointers
-    ///@param flat object to clean up
-    void cleanup(atom::reply_type::flat_response & flat){
-        flat.first.reset();
-    }
-
-    ///release the ownership of shared pointers
-    ///@param entry_map object to clean up
-    void cleanup(atom::reply_type::entry_response & entry_map) {
-        for(auto it = entry_map.begin(); it != entry_map.end(); it++){
-            auto vec = it->second;
-            for(auto in = vec.begin(); in != vec.end(); in++){
-                in->first.reset();
-            }
-            vec.clear();
-        }
-        entry_map.clear();
-    }
-
-    ///release the ownership of shared pointers
-    ///@param entries_list object to clean up
-    void cleanup(atom::reply_type::entry_response_list & entries_list){
-        for(auto & map : entries_list){
-            cleanup(map);
-        }
-    }
-    
-};
 
 template<typename socket, typename endpoint, typename buffer, typename iterator, typename policy> 
 class Redis {

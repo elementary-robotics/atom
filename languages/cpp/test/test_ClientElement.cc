@@ -59,13 +59,9 @@ TEST_F(ClientElementTest, init_ClientElement){
 TEST_F(ClientElementTest, entry_read_n){
 
     std::string stream_name = "stream:MyElem:client_stream";
+    atom::error err;
 
-    atom::error err;    
-    /* my_type test_data(100, false, "Msgpack Serialization Data Here!");
-    std::stringstream buff;
-    ser.serialize<my_type, std::stringstream>(test_data, buff); */
-
-    //write an entry like server element would
+    //serialize and write an entry like server element would
     std::vector<std::string> my_data = {"hello", "world", "ice_cream", "chocolate"};
     std::stringstream ss;
     msgpack::pack(ss, my_data[1]);
@@ -77,8 +73,8 @@ TEST_F(ClientElementTest, entry_read_n){
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"msgpack", my_data, err);
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "2", err);
 
-    //read the entry
-    client_elem.entry_read_n("MyElem", "client_stream", 2, err, "msgpack", false);
+    //read the entry - below gens error!
+    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 2, err, "msgpack", false);
 
     //cleanup
     reply1.cleanup();

@@ -8,6 +8,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifndef __ATOM_CPP_PARSER_H
+#define __ATOM_CPP_PARSER_H
+
 #include <iostream>
 #include <memory>
 #include <map>
@@ -19,8 +22,7 @@
 #include "Error.h"
 #include "Logger.h"
 
-#ifndef __ATOM_CPP_PARSER_H
-#define __ATOM_CPP_PARSER_H
+
 
 namespace atom {
 
@@ -48,6 +50,10 @@ namespace reply_type {
         entry_map = 1, ///< map of entries
         entry_maplist = 2 ///< vector of entry maps
     };
+
+    inline std::string to_string(flat_response & raw){
+        return std::string(*raw.first.get(), raw.second);
+    }
 }
 
 
@@ -114,7 +120,7 @@ public:
 
     ///Debug helper: logs contents of vector of entry maps
     ///@param pointers_map object to debug
-    void maplist_dbg(std::vector<std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>>> pointers_maplist){
+    void maplist_dbg(atom::reply_type::entry_response_list& pointers_maplist){
         int counter=0;
         for(auto& v: pointers_maplist){
             logger.debug("-------------" + std::to_string(counter) + "--------------");
@@ -126,7 +132,7 @@ public:
 
     ///Debug helper: logs entry map
     ///@param pointers_map object to debug
-    void map_dbg(std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> pointers_map){
+    void map_dbg(atom::reply_type::entry_response& pointers_map){
         logger.debug("...........begin................");
         for(auto& m: pointers_map){
             auto pairs = m.second;
@@ -140,17 +146,17 @@ public:
 
     ///Debug helper: logs contents of flat pairs
     ///@param pointers_map object to debug
-    void flat_dbg(atom::reply_type::flat_response pair){
-        logger.debug("DATA: "+ std::string(*(pair.first),pair.second) +", SIZE: "+std::to_string(pair.second));
+    void flat_dbg(atom::reply_type::flat_response& pair){
+        logger.debug("DATA: "+ atom::reply_type::to_string(pair) +", SIZE: "+std::to_string(pair.second));
     }
 
 private: 
 
     //flat parser for redis replies - for XADD, XDEL, SET, XACK
-    std::pair<std::shared_ptr<const char *>, size_t>
+    atom::reply_type::flat_response
     process_flat(const buffer &buff, atom::error & err){
         logger.debug("process_flat()");        
-        std::pair<std::shared_ptr<const char *>, size_t> response;
+        atom::reply_type::flat_response response;
         auto end = buf_iter::end(buff.data());
 
         for(auto it = buf_iter::begin(buff.data()); it != end; ++it){
@@ -163,7 +169,7 @@ private:
                 size_t str_len = find_data(it, end);
                 logger.debug("process_flat| str_len: " + std::to_string(str_len));
                 std::shared_ptr<const char *> str = std::make_shared<const char *>(&*(it));
-                response = std::pair<std::shared_ptr<const char *>,size_t>(str, str_len); 
+                response = atom::reply_type::flat_response(str, str_len); 
                 it += (str_len);
                 break;
             }
@@ -175,7 +181,7 @@ private:
                 size_t data_len = std::get<1>(sizes);
                 logger.debug("process_flat| data_len: " + std::to_string(data_len));
                 std::shared_ptr<const char *> data = std::make_shared<const char *>(&*(it+=num_bytes));
-                response = std::pair<std::shared_ptr<const char *>,size_t>(data, data_len);
+                response = atom::reply_type::flat_response(data, data_len);
                 it+= (data_len); //move pointer past the data string
                 break;
             }
@@ -186,10 +192,10 @@ private:
 
     //parser for entries - each entry represented as a map with ID as map key, which map to 
     //points to buffer which hold redis keys and values mapped to their size
-    std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>>
+    atom::reply_type::entry_response
         process_entry(buf_iter & data, buf_iter & end, atom::error & err){
             logger.debug("process_entry()");
-            std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> parsed_map;
+            atom::reply_type::entry_response parsed_map;
 
             //find number of entries
             assert(*data == '*');
@@ -202,7 +208,7 @@ private:
 
             //auto start = data;
             for(size_t entry = 0; entry < num_entries; entry++){
-                std::vector<std::pair<std::shared_ptr<const char *>, size_t>> inner_data;
+                std::vector<atom::reply_type::flat_response> inner_data;
                 bool id_read = false;
                 bool entry_read = false;
                 std::string id;
@@ -277,9 +283,9 @@ private:
 
 
     //parser for reading entry maps on a per-stream basis
-    std::vector<std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>>>
+    atom::reply_type::entry_response_list
     process_entrylist(buf_iter data, buf_iter end, atom::error & err) {
-        std::vector<std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>>> parsed_response;
+        atom::reply_type::entry_response_list parsed_response;
         //find number of streams
         assert(*data == '*');
         data++; //move past the * indicator char
@@ -301,8 +307,7 @@ private:
                 case '*': {
                 logger.debug("process array| array");
                     if(stream_name_read){
-                        std::map<std::string, std::vector<std::pair<std::shared_ptr<const char *>, size_t>>> 
-                        entry_map = process_entry(it, end, err);
+                        atom::reply_type::entry_response entry_map = process_entry(it, end, err);
                         parsed_response.push_back(entry_map);
                         stream_read=true;
                     }

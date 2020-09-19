@@ -13,6 +13,7 @@
 #include <iostream>
 #include <thread>
 
+#include "msgpack.hpp"
 
 #include "Server_Element.h"
 #include "Serialization.h"
@@ -57,6 +58,7 @@ TEST_F(ServerElementTest, init_ServerElement){
 }
 
 TEST_F(ServerElementTest, entry_write){
+//TODO add expectations for this test!
 
     atom::error err;
     std::vector<std::string> entry_data = {"hello", "world", "I like", "cake"};
@@ -67,6 +69,7 @@ TEST_F(ServerElementTest, entry_write){
 }
 
 TEST_F(ServerElementTest, entry_write_msgpack){
+//TODO add expectations for this test!
 
     atom::error err;
     std::vector<std::string> entry_data = {"hello", "world", "I like", "cake"};
@@ -77,23 +80,18 @@ TEST_F(ServerElementTest, entry_write_msgpack){
 }
 
 TEST_F(ServerElementTest, entry_write_msgpack_variant){
-
+//TODO add expectations for this test!
     atom::error err;
-    std::vector<msgpack::type::variant> arr{1,2,3}; 
-    std::vector<msgpack::type::variant> entry_data;
-    entry_data.push_back("key");
-    entry_data.push_back(10);
-    entry_data.push_back("what");
-    entry_data.push_back("string it is!");
-    entry_data.push_back("hi");
-    entry_data.push_back(111.000111);
-    entry_data.push_back("arr");
-    entry_data.push_back(arr);
-
-    server_elem.entry_write("server_stream", entry_data, atom::Serialization::method::msgpack, err);
+    std::vector<msgpack::type::variant> arr0{1, 2, 3};
+    std::vector<msgpack::type::variant> arr1{"hello", "i like", "cake"}; 
+    std::vector<msgpack::type::variant> entry_data{"key", "string value", "integer_key", 1000, "double_key", 1.01111, "vector_key", arr0, "another_vector_key", arr1};
+    atom::redis_reply<boost::asio::streambuf> reply = server_elem.entry_write("server_stream", entry_data, atom::Serialization::method::msgpack, err);
+    
     if(err){
         std::cout << err.message() << std::endl;
+        FAIL();
     }
+    //std::string id = std::string(reply.parsed_reply)
 }
 
 TEST_F(ServerElementTest, entry_write_invalid_key){

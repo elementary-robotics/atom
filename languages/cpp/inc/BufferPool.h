@@ -21,55 +21,11 @@
 
 #include "Logger.h"
 #include "config.h"
+#include "Messages.h"
 
 namespace atom {
 
-template<typename buffer>
-class pooled_buffer : public std::enable_shared_from_this<pooled_buffer<buffer>> {
-public:
-    ///Constructor for pooled_buffer, the class
-    /// used in BufferPool
-    pooled_buffer() : ref_counter(0){};
-    pooled_buffer(const pooled_buffer&) = delete;
-    pooled_buffer(std::shared_ptr<pooled_buffer> move) : ref_counter(move->ref_counter) {};
 
-    virtual ~pooled_buffer(){};
-
-    ///Update reference counter for pooled_buffer.
-    ///Increment by 1.
-    void add_ref(){
-        ref_counter++;
-    }
-
-    ///Update reference counter for pooled_buffer.
-    ///Decrement by 1.
-    void remove_ref(){
-        if(ref_counter > 0){
-            ref_counter--;
-        }
-        else{
-            //TODO: how to handle this case?
-        }
-    }
-
-    ///Get reference information on pooled_buffer
-    ///@return number of entities that hold a reference to pooled_buffer instance
-    int get_refs(){
-        return ref_counter;
-    }
-
-    ///Consume buffer
-    ///@param size bytes to consume in buffer
-    void consume(size_t size){
-        io_buff.consume(size);
-    }
-
-    buffer io_buff;
-
-private:
-    
-    int ref_counter;
-};
 
 
 template<typename buffer>

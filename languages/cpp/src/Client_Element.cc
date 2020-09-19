@@ -40,7 +40,7 @@ std::tuple<atom::Serialization::method, int> atom::Client_Element<ConnectionType
             if(candidate == "ser"){
                 counter++;
                 std::string method = std::string(*entry_data[counter].first.get(), entry_data[counter].second);
-                counter+=2;
+                counter++;
                 if(method == ser.method_strings.at(atom::Serialization::method::none)){
                     return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::none, counter);
                 }

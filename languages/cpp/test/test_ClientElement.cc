@@ -56,7 +56,7 @@ TEST_F(ClientElementTest, init_ClientElement){
 
 }
 
-TEST_F(ClientElementTest, entry_read_n){
+TEST_F(ClientElementTest, entry_read_n_msgpack){
 
     std::string stream_name = "stream:MyElem:client_stream";
     atom::error err;
@@ -73,8 +73,60 @@ TEST_F(ClientElementTest, entry_read_n){
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"msgpack", my_data, err);
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "2", err);
 
-    //read the entry - below gens error!
-    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 2, err, "msgpack", false);
+    //read the entry
+    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, "msgpack", false);
+
+    //verify keys
+    EXPECT_THAT(entries[0].data[0].key(), my_data[0]);
+    EXPECT_THAT(entries[0].data[2].key(), my_data[2]);
+
+    //verify values
+    auto deser_data = entries[0].data[1].value();
+    msgpack::type::variant  expected("world");
+    msgpack::type::variant received = *deser_data.get();
+    EXPECT_THAT(received, expected);
+
+    auto deser_data1 = entries[0].data[3].value();
+    msgpack::type::variant  expected1("chocolate");
+    msgpack::type::variant received1 = *deser_data1.get();
+    EXPECT_THAT(received1, expected1);
+
+    //cleanup
+    reply1.cleanup();
+    reply2.cleanup();
+
+}
+
+TEST_F(ClientElementTest, entry_read_n_none){
+
+    std::string stream_name = "stream:MyElem:client_stream";
+    atom::error err;
+
+    //serialize and write an entry like server element would
+    std::vector<std::string> my_data = {"hello", "world", "ice_cream", "chocolate"};
+    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"none", my_data, err);
+    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "1", err);
+
+    /* auto data1 = reply1.flat_response();
+    auto id = atom::reply_type::to_string(data1);
+    auto data2 = reply2.entry_response(); */
+    //atom::entry_type::object<const char *>(data2.at(id)[0].first, data2.at(id)[0].second);
+
+    //read the entry - TODO: fix const char * case.
+    auto entries = client_elem.entry_read_n</* const */ char *>("MyElem", "client_stream", 1, err, "none", false);
+
+     //verify keys
+    EXPECT_THAT(entries[0].data[0].key(), my_data[0]);
+    EXPECT_THAT(entries[0].data[2].key(), my_data[2]);
+
+    /* //verify values
+    auto received = entries[0].data[1].value();
+    std::string expected = "world";
+    EXPECT_THAT(*received.get(), expected);
+
+    auto received1 = entries[0].data[3].value();
+    std::string expected1 = "chocolate";
+    EXPECT_THAT(*received1.get(), expected1); */
 
     //cleanup
     reply1.cleanup();

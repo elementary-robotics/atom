@@ -160,19 +160,27 @@ namespace entry_type {
 
     template<typename DataType>
     struct object {
-        std::pair<boost::variant<deser_data<DataType>, str_data, buff_data>, size_t> data;
+        std::pair<boost::variant<deser_data<DataType>, str_data, buff_data>, size_t> pair;
 
         object(std::shared_ptr<DataType> ptr, size_t size) {
-            data.first = ptr;
-            data.second = size;
+            pair.first = ptr;
+            pair.second = size;
         }
         object(std::shared_ptr<std::string> ptr, size_t size) {
-            data.first = ptr;
-            data.second = size;
+            pair.first = ptr;
+            pair.second = size;
         }
         object(std::shared_ptr<const char *> ptr, size_t size) {
-            data.first = ptr;
-            data.second = size;
+            pair.first = ptr;
+            pair.second = size;
+        }
+
+        std::string key(){
+            return *boost::get<std::shared_ptr<std::string>>(pair.first).get();
+        }
+
+        std::shared_ptr<DataType> value(){
+            return boost::get<std::shared_ptr<DataType>>(pair.first);
         }
     };
 }

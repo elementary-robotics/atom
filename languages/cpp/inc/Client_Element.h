@@ -84,7 +84,7 @@ std::vector<atom::entry<DataType, BufferType>> entry_read_n(std::string element_
                 
 
         int position = std::get<1>(method);
-        bool is_val = true;
+        bool is_val = false;
 
         //deserialize it
         for(size_t i = position; i < entry_map.second.size(); i++){

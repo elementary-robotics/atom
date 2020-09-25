@@ -101,46 +101,96 @@ public:
     }
 
     //TODO: move the logic over from the Client_Element.
-    //template<typename BufferType, typename MsgPackType>
-    //void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, atom::reply_type::entry_response & entry_map){
+    template<typename BufferType, typename MsgPackType>
+    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, std::string serialization, atom::reply_type::entry_response & data, atom::error & err){
+        for(auto & entry_map: data){
+            std::string uid = entry_map.first;
 
-    //}
+            //find the serialization method
+            std::tuple<atom::Serialization::method,int> method = get_serialization_method(entry_map.second);
+            atom::Serialization::method ser_method = std::get<0>(method);
+            logger.debug("Serialization method found: " + method_strings.at(ser_method) );
+            
+            //TODO figure out how to do the case where there is no serialization method found in the keys
+            //TODO if the serialization method is there ignore the serialization arg passed in
 
-    //TODO: clean that garbage up on the bottom.
+            int position = std::get<1>(method);
+            bool is_val = false;
 
-/*         template<typename DataType>
-    void deserialize(atom::reply_type::flat_response resp, atom::Serialization::method ser_method, atom::entry_type::object<DataType>& object, atom::error & err){
-        switch(ser_method){
-            case atom::Serialization::msgpack:
-            {   
-                //std::string data_str(*resp.first.get(), resp.second);
-                //DataType deser_data = deserialize_msgpack<DataType>(data_str);
-                //object.init(std::make_shared<DataType>(deser_data), resp.second);
-                // return atom::entry_type::object<DataType>(std::make_shared<DataType>(deser_data), resp.second);
-                //return boost::apply_visitor(msgpack_deserializer{}, resp);
-                msgpack_serialization<DataType> obj;
-                object = obj.deserialize(resp, ser_method, err);
-                break;
+            switch(ser_method){
+                case atom::Serialization::msgpack:
+                {   
+                    atom::Serialization::msgpack_serialization<MsgPackType> obj;
+                    atom::msgpack_entry<BufferType, MsgPackType> single_entry(uid);
+
+                    for(size_t i = position; i < entry_map.second.size(); i++){
+                        if(is_val){  
+                            atom::entry_type::object<MsgPackType> deser = obj.deserialize(entry_map.second[i], ser_method, err);
+                            single_entry.data.push_back(deser);
+                        } else{
+                            auto key = std::make_shared<std::string>(atom::reply_type::to_string(entry_map.second[i]));
+                            single_entry.data.push_back(atom::entry_type::object<MsgPackType>(key, entry_map.second[i].second));
+                        }
+                        is_val = !is_val;
+                    }
+                    entries.push_back(single_entry);
+                    break;
+                }
+                case atom::Serialization::none:
+                {
+                    atom::Serialization::none_serialization<const char *> obj;
+                    atom::raw_entry<BufferType> single_entry(uid);
+
+                    for(size_t i = position; i < entry_map.second.size(); i++){
+                        if(is_val){  
+                            atom::entry_type::object<const char *> deser = obj.deserialize(entry_map.second[i], ser_method, err);
+                            single_entry.data.push_back(deser);
+                        } else{
+                            auto key = std::make_shared<std::string>(atom::reply_type::to_string(entry_map.second[i]));
+                            single_entry.data.push_back(atom::entry_type::object<const char *>(key, entry_map.second[i].second));
+                        }
+                        is_val = !is_val;
+                    }
+                    entries.push_back(single_entry);
+                    break;
+                }
+                case atom::Serialization::arrow:
+                {
+                    logger.alert("Arrow deserialization not supported!");
+                    err.set_error_code(atom::error_codes::unsupported_command);
+                }
+                default:
+                    throw std::runtime_error("Supplied deserialization option is invalid.");
             }
-            case atom::Serialization::none:
-            {
-                //TODO: handle buffer-lifecycle - so that it exists and is updated via the buffer pool when the entry takes ownership of it
-                //object = atom::entry_type::object<DataType>(resp.first, resp.second);
-                //object.init(resp.first, resp.second);
-                none_serialization<> obj;
-                object = obj.deserialize(resp, ser_method, err);
-                break;
-            }
-            case atom::Serialization::arrow:
-            {
-                logger.alert("Arrow deserialization not supported!");
-                err.set_error_code(atom::error_codes::unsupported_command);
-            }
-            default:
-                throw std::runtime_error("Supplied deserialization option is invalid.");
         }
-    } */
+    }
 
+
+    std::tuple<atom::Serialization::method, int> get_serialization_method(std::vector<atom::reply_type::flat_response>& entry_data){
+        int counter = 0;
+        for(auto & rediskey_val: entry_data){
+            if(rediskey_val.second == 3){
+                std::string candidate = std::string(*rediskey_val.first.get(), rediskey_val.second);
+                if(candidate == "ser"){
+                    counter++;
+                    std::string method = std::string(*entry_data[counter].first.get(), entry_data[counter].second);
+                    counter++;
+                    if(method == method_strings.at(atom::Serialization::method::none)){
+                        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::none, counter);
+                    }
+                    if(method == method_strings.at(atom::Serialization::method::msgpack)){
+                        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::msgpack, counter);
+                    }
+                    if(method == method_strings.at(atom::Serialization::method::arrow)){
+                        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::arrow, counter);
+                    }
+                    throw std::runtime_error(method + " serialization not supported.");
+                }
+            }
+            counter++;
+        }
+        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::none, 0);
+    }
 
 
     //streamType should support write(const char*, size_t)

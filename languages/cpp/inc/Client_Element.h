@@ -73,66 +73,7 @@ std::vector<atom::entry<BufferType, MsgPackType>> entry_read_n(std::string eleme
     }
 
     atom::reply_type::entry_response data = reply.entry_response();
-    for(auto & entry_map: data){
-        std::string uid = entry_map.first;
-
-        //find the serialization method
-        std::tuple<atom::Serialization::method,int> method = get_serialization_method(entry_map.second);
-        atom::Serialization::method ser_method = std::get<0>(method);
-        logger.debug("Serialization method found: " + ser.method_strings.at(ser_method) );
-        
-        //TODO figure out how to do the case where there is no serialization method found in the keys
-        //TODO if the serialization method is there ignore the serialization arg passed in
-
-        int position = std::get<1>(method);
-        bool is_val = false;
-
-        switch(ser_method){
-            case atom::Serialization::msgpack:
-            {   
-                atom::Serialization::msgpack_serialization<MsgPackType> obj;
-                atom::msgpack_entry<BufferType, MsgPackType> single_entry(uid);
-
-                for(size_t i = position; i < entry_map.second.size(); i++){
-                    if(is_val){  
-                        atom::entry_type::object<MsgPackType> deser = obj.deserialize(entry_map.second[i], ser_method, err);
-                        single_entry.data.push_back(deser);
-                    } else{
-                        auto key = std::make_shared<std::string>(atom::reply_type::to_string(entry_map.second[i]));
-                        single_entry.data.push_back(atom::entry_type::object<MsgPackType>(key, entry_map.second[i].second));
-                    }
-                    is_val = !is_val;
-                }
-                entries.push_back(single_entry);
-                break;
-            }
-            case atom::Serialization::none:
-            {
-                atom::Serialization::none_serialization<const char *> obj;
-                atom::raw_entry<BufferType> single_entry(uid);
-
-                for(size_t i = position; i < entry_map.second.size(); i++){
-                    if(is_val){  
-                        atom::entry_type::object<const char *> deser = obj.deserialize(entry_map.second[i], ser_method, err);
-                        single_entry.data.push_back(deser);
-                    } else{
-                        auto key = std::make_shared<std::string>(atom::reply_type::to_string(entry_map.second[i]));
-                        single_entry.data.push_back(atom::entry_type::object<const char *>(key, entry_map.second[i].second));
-                    }
-                    is_val = !is_val;
-                }
-                entries.push_back(single_entry);
-                break;
-            }
-            case atom::Serialization::arrow:
-            {
-                logger.alert("Arrow deserialization not supported!");
-                err.set_error_code(atom::error_codes::unsupported_command);
-            }
-            default:
-                throw std::runtime_error("Supplied deserialization option is invalid.");
-        }
-    }
+    ser.deserialize<BufferType, MsgPackType>(entries, serialization, data, err);
 
     connection->release_rx_buffer(reply);
     return entries;

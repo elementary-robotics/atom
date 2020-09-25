@@ -31,7 +31,7 @@ atom::Client_Element<ConnectionType, BufferType>::~Client_Element(){
     //TODO cleanup the pool and close the connection
 };
 
-template<typename ConnectionType, typename BufferType>
+/* template<typename ConnectionType, typename BufferType>
 std::tuple<atom::Serialization::method, int> atom::Client_Element<ConnectionType, BufferType>::get_serialization_method(std::vector<atom::reply_type::flat_response>& entry_data){
     int counter = 0;
     for(auto & rediskey_val: entry_data){
@@ -56,7 +56,7 @@ std::tuple<atom::Serialization::method, int> atom::Client_Element<ConnectionType
         counter++;
     }
     return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::none, 0);
-}
+} */
 
 
 template<typename ConnectionType, typename BufferType>

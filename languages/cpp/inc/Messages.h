@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <boost/variant.hpp>
+#include <msgpack.hpp>
 
 #include "Error.h"
 #include "Parser.h"
@@ -155,24 +156,24 @@ class redis_reply {
 namespace entry_type {
     template<typename DataType>
     using deser_data = std::shared_ptr<DataType>;
+
     using str_data = std::shared_ptr<std::string>;
-    using buff_data = std::shared_ptr<const char *>;
 
     template<typename DataType>
     struct object {
-        std::pair<boost::variant<deser_data<DataType>, str_data, buff_data>, size_t> pair;
+        std::pair<boost::variant<deser_data<DataType>, str_data>, size_t> pair;
+    
+        object(std::shared_ptr<DataType> ptr, size_t size) : pair(ptr,size) { }
+        object(std::shared_ptr<std::string> ptr, size_t size) : pair(ptr,size) { }
+        object() {}
 
-        object(std::shared_ptr<DataType> ptr, size_t size) {
-            pair.first = ptr;
-            pair.second = size;
+        inline object operator=(object other){
+            pair.first = other.pair.first;
+            pair.second = other.pair.second;
         }
-        object(std::shared_ptr<std::string> ptr, size_t size) {
-            pair.first = ptr;
-            pair.second = size;
-        }
-        object(std::shared_ptr<const char *> ptr, size_t size) {
-            pair.first = ptr;
-            pair.second = size;
+
+        virtual ~object(){
+            //pair.first.reset();
         }
 
         std::string key(){
@@ -182,25 +183,93 @@ namespace entry_type {
         std::shared_ptr<DataType> value(){
             return boost::get<std::shared_ptr<DataType>>(pair.first);
         }
+
+        std::string svalue(){
+            std::shared_ptr<DataType> data = value();
+            return atom::reply_type::to_string(data, pair.second);
+        }
+
     };
 }
 
 ///An entry is a portion of a reply from Redis. It encompasses a Redis ID and 
 ///@param field the ID of the reply
 ///@param data a pointer to the beginning of the data belonging to this entry.
-template<typename DataType, typename BufferType>
-struct entry {
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+struct msgpack_entry {
     std::string field;
-    std::vector<atom::entry_type::object<DataType> > data;
+    std::vector<atom::entry_type::object<MsgPackType> > data;
     std::shared_ptr<BufferType> base_buffer;
 
-    entry(std::string field, 
-        std::vector<atom::entry_type::object<DataType> >& data,
+    msgpack_entry(std::string field, 
+        std::vector<atom::entry_type::object<MsgPackType> >& data,
         atom::redis_reply<BufferType> reply) : field(field),
                                                 data(data),
                                                 base_buffer()
                                                 {};
-    entry(std::string field) : field(field){};
+    msgpack_entry(std::string field) : field(field){};
+
+};
+
+///An entry is a portion of a reply from Redis. It encompasses a Redis ID and 
+///@param field the ID of the reply
+///@param data a pointer to the beginning of the data belonging to this entry.
+template<typename BufferType>
+struct raw_entry {
+    std::string field;
+    std::vector<atom::entry_type::object<const char *> > data;
+    std::shared_ptr<BufferType> base_buffer;
+
+    raw_entry(std::string field, 
+        std::vector<atom::entry_type::object<const char *> >& data,
+        atom::redis_reply<BufferType> reply) : field(field),
+                                                data(data),
+                                                base_buffer()
+                                                {};
+    raw_entry(std::string field) : field(field){};
+
+};
+
+///An entry is a portion of a reply from Redis. It encompasses a Redis ID and 
+///@param field the ID of the reply
+///@param data a pointer to the beginning of the data belonging to this entry.
+template<typename BufferType, typename ArrowType = void> //TODO update that void when you actually employ arrow
+struct arrow_entry {
+    std::string field;
+    std::vector<atom::entry_type::object<ArrowType> > data;
+    std::shared_ptr<BufferType> base_buffer;
+
+    arrow_entry(std::string field, 
+        std::vector<atom::entry_type::object<ArrowType> >& data,
+        atom::redis_reply<BufferType> reply) : field(field),
+                                                data(data),
+                                                base_buffer()
+                                                {};
+    arrow_entry(std::string field) : field(field){};
+
+};
+
+///Holds the different forms of entry_types that we could expect to see.
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+class entry {
+public:
+    boost::variant<msgpack_entry<BufferType, MsgPackType>,raw_entry<BufferType>,arrow_entry<BufferType>> data;
+
+    entry(msgpack_entry<BufferType, MsgPackType> data) : data(data){};
+    entry(raw_entry<BufferType> data) : data(data){};
+    entry(arrow_entry<BufferType> data) : data(data){};
+
+    msgpack_entry<BufferType, MsgPackType> get_msgpack(){
+        return boost::get<msgpack_entry<BufferType, MsgPackType>>(data);
+    }
+    
+    raw_entry<BufferType> get_raw(){
+        return boost::get<raw_entry<BufferType>>(data);
+    }
+
+   arrow_entry<BufferType> get_arrow(){
+        return boost::get<arrow_entry<BufferType>>(data); //TODO implement and test
+    }
 
 };
 
@@ -228,8 +297,8 @@ struct reference {
 typedef std::function<void(std::string, std::string)> StreamHandler;
 
 ///function signature for read handler, params are an entry and user-supplied data
-template<typename DataType, typename BufferType>
-using ReadHandler = std::function<bool(entry<DataType, BufferType>&, void*)>;
+template<typename BufferType, typename MsgPackType>
+using ReadHandler = std::function<bool(atom::entry<BufferType, MsgPackType>&, void*)>;
 
 ///function signature for command handler, params are redis reply, element response, and error 
 template<typename BufferType>

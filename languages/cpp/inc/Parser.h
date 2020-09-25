@@ -54,6 +54,10 @@ namespace reply_type {
     inline std::string to_string(flat_response & raw){
         return std::string(*raw.first.get(), raw.second);
     }
+
+    inline std::string to_string(std::shared_ptr<const char *> ptr, size_t size){
+        return std::string(*ptr.get(), size);
+    }
 }
 
 

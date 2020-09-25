@@ -77,16 +77,16 @@ TEST_F(ClientElementTest, entry_read_n_msgpack){
     auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, "msgpack", false);
 
     //verify keys
-    EXPECT_THAT(entries[0].data[0].key(), my_data[0]);
-    EXPECT_THAT(entries[0].data[2].key(), my_data[2]);
+    EXPECT_THAT(entries[0].get_msgpack().data[0].key(), my_data[0]);
+    EXPECT_THAT(entries[0].get_msgpack().data[2].key(), my_data[2]);
 
     //verify values
-    auto deser_data = entries[0].data[1].value();
+    auto deser_data = entries[0].get_msgpack().data[1].value();
     msgpack::type::variant  expected("world");
     msgpack::type::variant received = *deser_data.get();
     EXPECT_THAT(received, expected);
 
-    auto deser_data1 = entries[0].data[3].value();
+    auto deser_data1 = entries[0].get_msgpack().data[3].value();
     msgpack::type::variant  expected1("chocolate");
     msgpack::type::variant received1 = *deser_data1.get();
     EXPECT_THAT(received1, expected1);
@@ -107,26 +107,26 @@ TEST_F(ClientElementTest, entry_read_n_none){
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"none", my_data, err);
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "1", err);
 
-    /* auto data1 = reply1.flat_response();
+    auto data1 = reply1.flat_response();
     auto id = atom::reply_type::to_string(data1);
-    auto data2 = reply2.entry_response(); */
-    //atom::entry_type::object<const char *>(data2.at(id)[0].first, data2.at(id)[0].second);
+    auto data2 = reply2.entry_response();
+    atom::entry_type::object<const char *>(data2.at(id)[0].first, data2.at(id)[0].second);
 
     //read the entry - TODO: fix const char * case.
-    auto entries = client_elem.entry_read_n</* const */ char *>("MyElem", "client_stream", 1, err, "none", false);
+    auto entries = client_elem.entry_read_n<>("MyElem", "client_stream", 1, err, "none", false);
 
      //verify keys
-    EXPECT_THAT(entries[0].data[0].key(), my_data[0]);
-    EXPECT_THAT(entries[0].data[2].key(), my_data[2]);
+    EXPECT_THAT(entries[0].get_raw().data[0].key(), my_data[0]);
+    EXPECT_THAT(entries[0].get_raw().data[2].key(), my_data[2]);
 
-    /* //verify values
-    auto received = entries[0].data[1].value();
+    //verify values
+    auto received = entries[0].get_raw().data[1].svalue();
     std::string expected = "world";
-    EXPECT_THAT(*received.get(), expected);
+    EXPECT_THAT(received, expected);
 
-    auto received1 = entries[0].data[3].value();
+    auto received1 = entries[0].get_raw().data[3].svalue();
     std::string expected1 = "chocolate";
-    EXPECT_THAT(*received1.get(), expected1); */
+    EXPECT_THAT(received1, expected1);
 
     //cleanup
     reply1.cleanup();

@@ -108,7 +108,8 @@ TEST_F(SerializationTest, deserialize_msgpack){
 
     //test the deserialization:
     std::stringstream serialized_msgpack(*out2[id][3].first.get());
-    auto deserialized = serialization.deserialize_msgpack<my_type, std::stringstream>(serialized_msgpack);
+    atom::Serialization::msgpack_serialization<my_type> obj;
+    auto deserialized = obj.deserialize_msgpack<std::stringstream>(serialized_msgpack);
     
     redis.release_rx_buffer(reply_); 
     //expect that data read back from redis is equivalent to the data we sent

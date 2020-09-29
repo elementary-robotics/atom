@@ -62,7 +62,6 @@ std::vector<atom::entry<BufferType, MsgPackType>> entry_read_n(std::string eleme
                                 int num_entries, atom::error & err, std::string serialization="", 
                                 bool force_serialization=false){
 
-
     std::vector<atom::entry<BufferType, MsgPackType>> entries;
     std::string stream_id = make_stream_id(element_name, stream_name);
     atom::redis_reply<BufferType> reply = connection->xrevrange(stream_id, "+", "-", std::to_string(num_entries), err);
@@ -88,11 +87,31 @@ std::vector<atom::entry<BufferType, MsgPackType>> entry_read_n(std::string eleme
 ///       If set to 0, all entries will be returned. If set to $, only new entries past the function call will be returned.
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-atom::redis_reply<BufferType> entry_read_since(std::string element_name, std::string stream_name, 
-                                int num_entries, atom::error & err, std::string last_id="0",
-                                std::string serialization="", bool force_serialization=false);
+template<typename MsgPackType = msgpack::type::variant>
+std::vector<atom::entry<BufferType, MsgPackType>> entry_read_since(std::string element_name, std::string stream_name, 
+                                int num_entries, atom::error & err,  std::string last_id="$",
+                                std::string block = "0",
+                                std::string serialization="", bool force_serialization=false){
 
+    std::vector<atom::entry<BufferType, MsgPackType>> entries;
+    std::string stream_id = make_stream_id(element_name, stream_name);
+    atom::redis_reply<BufferType> reply = connection->xread("1", block, stream_id, last_id, err);
 
+    if(err){
+        logger.error("Error: " + err.message());
+        return entries;
+    }
+
+    std::cout<<"Here!" << std::endl;
+    auto data = reply.entry_response_list();
+    std::cout<<"here: " <<  <<std::endl;
+    ser.deserialize<BufferType, MsgPackType>(entries, serialization, data, err);
+
+    connection->release_rx_buffer(reply);
+    return entries;
+}
+
+// TODO; consolidate below with above.
 ///Blocking read entries from an element's stream since a given last_id
 ///@param element_name Name of the element the stream belongs to
 ///@param stream_name Name of the stream to read entries from

@@ -12,7 +12,7 @@
 
 #include <iostream>
 #include <thread>
-
+#include <stdlib.h>
 
 #include "Client_Element.h"
 #include "Serialization.h"
@@ -107,12 +107,7 @@ TEST_F(ClientElementTest, entry_read_n_none){
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"none", my_data, err);
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "1", err);
 
-    auto data1 = reply1.flat_response();
-    auto id = atom::reply_type::to_string(data1);
-    auto data2 = reply2.entry_response();
-    atom::entry_type::object<const char *>(data2.at(id)[0].first, data2.at(id)[0].second);
-
-    //read the entry - TODO: fix const char * case.
+    //read the entry
     auto entries = client_elem.entry_read_n<>("MyElem", "client_stream", 1, err, "none", false);
 
      //verify keys
@@ -132,4 +127,51 @@ TEST_F(ClientElementTest, entry_read_n_none){
     reply1.cleanup();
     reply2.cleanup();
 
+}
+
+TEST_F(ClientElementTest, entry_read_since){
+
+    std::string stream_name = "stream:MyElem:client_stream";
+    atom::error err;
+
+    //serialize and write an entry like server element would
+    std::vector<std::string> my_data = {"hello", "world", "ice_cream", "chocolate"};
+    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"none", my_data, err);
+
+    auto flat = reply1.flat_response();
+    std::string id = atom::reply_type::to_string(flat);
+    std::vector<atom::entry<boost::asio::streambuf, msgpack::type::variant>> entries;
+
+
+    //write the entry
+    std::thread t1([&]{
+        sleep(2);
+        atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xadd("stream:MyElem:client_stream","none", my_data, err);
+        reply2.cleanup();
+    });
+
+    //read entries
+    std::thread t2([&]{
+        entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "1000", "none", false);
+    });
+
+    t2.join();
+    t1.join();
+
+    //verify keys
+    EXPECT_THAT(entries[0].get_raw().data[0].key(), my_data[0]);
+    EXPECT_THAT(entries[0].get_raw().data[2].key(), my_data[2]);
+
+    //verify values
+    auto received = entries[0].get_raw().data[1].svalue();
+    std::string expected = "world";
+    EXPECT_THAT(received, expected);
+
+    auto received1 = entries[0].get_raw().data[3].svalue();
+    std::string expected1 = "chocolate";
+    EXPECT_THAT(received1, expected1);
+
+    //cleanup
+    reply1.cleanup();
+    
 }

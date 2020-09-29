@@ -200,6 +200,12 @@ class Redis {
             bredis_con->write(bredis::single_command_t{ "XREAD" , "COUNT", count, "STREAMS", stream_name, id}, err);
             return read_reply(atom::reply_type::options::entry_maplist, err);
         }
+        
+        //xread operation
+        atom::redis_reply<buffer> xread( std::string count, std::string block, std::string stream_name, std::string id, atom::error & err){
+            bredis_con->write(bredis::single_command_t{ "XREAD" , "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id}, err);
+            return read_reply(atom::reply_type::options::entry_maplist, err);
+        }
 
         //xack operation
         atom::redis_reply<buffer> xack(std::string stream_name, std::string group_name, std::string id, atom::error & err){

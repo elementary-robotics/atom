@@ -100,7 +100,14 @@ public:
 
     }
 
-    //TODO: move the logic over from the Client_Element.
+    template<typename BufferType, typename MsgPackType>
+    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, std::string serialization, atom::reply_type::entry_response_list & data, atom::error & err){
+        //Be aware that we can keep using the vector as-is only because we read from one stream at a time in our elements.
+        for(auto & entry_response : data){
+            deserialize(entries, serialization, entry_response, err);
+        }
+    }
+
     template<typename BufferType, typename MsgPackType>
     void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, std::string serialization, atom::reply_type::entry_response & data, atom::error & err){
         for(auto & entry_map: data){

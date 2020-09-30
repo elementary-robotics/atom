@@ -102,9 +102,7 @@ std::vector<atom::entry<BufferType, MsgPackType>> entry_read_since(std::string e
         return entries;
     }
 
-    std::cout<<"Here!" << std::endl;
     auto data = reply.entry_response_list();
-    std::cout<<"here: " <<  <<std::endl;
     ser.deserialize<BufferType, MsgPackType>(entries, serialization, data, err);
 
     connection->release_rx_buffer(reply);

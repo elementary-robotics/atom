@@ -140,8 +140,9 @@ TEST_F(ClientElementTest, entry_read_since){
 
     auto flat = reply1.flat_response();
     std::string id = atom::reply_type::to_string(flat);
+    reply1.cleanup();
+    
     std::vector<atom::entry<boost::asio::streambuf, msgpack::type::variant>> entries;
-
 
     //write the entry
     std::thread t1([&]{
@@ -152,7 +153,7 @@ TEST_F(ClientElementTest, entry_read_since){
 
     //read entries
     std::thread t2([&]{
-        entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "1000", "none", false);
+        entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "10000", "none", false);
     });
 
     t2.join();
@@ -169,9 +170,12 @@ TEST_F(ClientElementTest, entry_read_since){
 
     auto received1 = entries[0].get_raw().data[3].svalue();
     std::string expected1 = "chocolate";
-    EXPECT_THAT(received1, expected1);
+    EXPECT_THAT(received1, expected1);    
+}
 
-    //cleanup
-    reply1.cleanup();
-    
+TEST_F(ClientElementTest, entry_read_since_timeout){
+
+    std::vector<atom::entry<boost::asio::streambuf, msgpack::type::variant>> entries;
+    entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "1000", "none", false);
+
 }

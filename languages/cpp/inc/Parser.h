@@ -345,6 +345,12 @@ private:
         size_t data_len, size = 0;
         std::stringstream len;
         for(auto it = begin; it != end; it++){
+            //check for nil reply
+            if(*it == '-'){
+                if(*(it+1)=='1'){
+                    return std::tuple<size_t, size_t>(0, 0);
+                }
+            }
             if(*it != '\r'){
                 size++;
                 len << *it;

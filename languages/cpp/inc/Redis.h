@@ -131,7 +131,9 @@ class Redis {
 
         // xadd operation - without automatically generated ids
         atom::redis_reply<buffer> xadd(std::string stream_name, std::string id, std::string field, const bytes_t * data, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, id, field, data }, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XADD", stream_name, id, field, data };
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
@@ -148,7 +150,9 @@ class Redis {
             std::vector<std::string> command = {"XADD", stream_name, "*", "ser", method};
             command.insert(command.end(), entry_map.begin(), entry_map.end());
             
-            bredis_con->write(bredis::single_command_t{command.cbegin(), command.cend()}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{command.cbegin(), command.cend()};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
@@ -197,13 +201,17 @@ class Redis {
 
         //xread operation
         atom::redis_reply<buffer> xread( std::string count, std::string stream_name, std::string id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XREAD" , "COUNT", count, "STREAMS", stream_name, id}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XREAD" , "COUNT", count, "STREAMS", stream_name, id};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_maplist, err);
         }
         
         //xread operation
         atom::redis_reply<buffer> xread( std::string count, std::string block, std::string stream_name, std::string id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XREAD" , "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XREAD" , "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_maplist, err);
         }
 
@@ -267,6 +275,7 @@ class Redis {
                     redis_check(result_markers, err);
                     if(!err){
                         //const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
+                        //logger.debug("raw data: " + std::string(data));
                         if(process_resp){
                             atom::reply_type::parsed_reply parsed = parser.process(pooled_buffer->io_buff, parse_option, err);
                             return atom::redis_reply<buffer>(result_markers.consumed, 
@@ -280,6 +289,14 @@ class Redis {
             }
             logger.error(err.message());   
             return atom::redis_reply<buffer>(0, std::make_shared<atom::pooled_buffer<buffer>>());
+        }
+
+        void redis_debug(bredis::args_container_t & args){
+            std::string debug_str;
+            for(auto & arg: args){
+                debug_str += (arg.to_string() + " ");
+            }
+            logger.debug(debug_str);
         }
 
     private:

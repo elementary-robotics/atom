@@ -59,7 +59,8 @@ virtual ~Client_Element();
 ///@tparam DataType Optional argument, specify if a serialization method other than atom::Serialization::none is desired
 template<typename MsgPackType = msgpack::type::variant>
 std::vector<atom::entry<BufferType, MsgPackType>> entry_read_n(std::string element_name, std::string stream_name, 
-                                int num_entries, atom::error & err, std::string serialization="", 
+                                int num_entries, atom::error & err, 
+                                atom::Serialization::method serialization=atom::Serialization::method::msgpack, 
                                 bool force_serialization=false){
 
     std::vector<atom::entry<BufferType, MsgPackType>> entries;
@@ -91,7 +92,8 @@ template<typename MsgPackType = msgpack::type::variant>
 std::vector<atom::entry<BufferType, MsgPackType>> entry_read_since(std::string element_name, std::string stream_name, 
                                 int num_entries, atom::error & err,  std::string last_id="$",
                                 std::string block = "0",
-                                std::string serialization="", bool force_serialization=false){
+                                atom::Serialization::method serialization=atom::Serialization::method::msgpack,
+                                bool force_serialization=false){
 
     std::vector<atom::entry<BufferType, MsgPackType>> entries;
     std::string stream_id = make_stream_id(element_name, stream_name);
@@ -109,31 +111,58 @@ std::vector<atom::entry<BufferType, MsgPackType>> entry_read_since(std::string e
     return entries;
 }
 
-// TODO; consolidate below with above.
-///Blocking read entries from an element's stream since a given last_id
-///@param element_name Name of the element the stream belongs to
-///@param stream_name Name of the stream to read entries from
-///@param num_entries Number of entries to get
-///@param last_id ID from which to begin getting entries from. 
-///       If set to 0, all entries will be returned. If set to $, only new entries past the function call will be returned.
-///@param block Optional argument, defaults to 0 to block forever. specifies the time (ms) to block on the read
-///@param serialization Optional argument, used for applying deserialziation method to entries
-///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-atom::redis_reply<BufferType> entry_read_since(std::string element_name, std::string stream_name, 
-                                int num_entries, atom::error & err, std::string last_id="0",
-                                std::chrono::milliseconds block = std::chrono::milliseconds(0),
-                                std::string serialization="", bool force_serialization=false);
-
 ///Listens on specified streams for entries, passes entries to corresponding handlers
-///@param read_streams Maps element name to list of stream name, handler pairs
+///@param stream_handlers vector of StreamHandlers
 ///@param n_loops Number of times to send a stream entry to the handlers
 ///               Defaults to 0 for infinite loop.
 ///@param timeout Time (ms) to block on the stream, and if surpassed, the function will return.
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@param force_serialization Optional argument, ignore default deserialization method in favor of serialization argument passed in
-void entry_read_loop(std::map<std::string, std::map<std::string, atom::StreamHandler>> read_streams, 
+template<typename MsgPackType = msgpack::type::variant>
+void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& stream_handlers, 
                                 int num_loops=0, std::chrono::milliseconds timeout = std::chrono::milliseconds(0),
-                                std::string serialization="", bool force_serialization=false);
+                                atom::Serialization::method serialization=atom::Serialization::method::msgpack,
+                                bool force_serialization=false){
+    
+    std::vector<std::string> stream_timestamps;
+    std::map<std::string, atom::Handler<BufferType, MsgPackType>> streams_map;
+    for(auto & handler: stream_handlers){
+        const std::string stream_id = make_stream_id(handler.element_name, handler.stream_name);
+        stream_timestamps.push_back(stream_id);
+        stream_timestamps.push_back(get_redis_timestamp());
+        streams_map.emplace(stream_id, handler.handler);
+    }
+
+    //counter to break out of while loop if num_loops =/= 0
+    int counter = 0;
+    while(true){
+        if(num_loops !=0){
+            if(counter == num_loops){
+                break;
+            }
+            counter++;
+        }
+
+        atom::error err;
+        atom::redis_reply<BufferType> data = connection->xread(stream_timestamps, err);
+        auto stream_entries = data.entry_response_list();
+        int vec_ind = 0;
+        for(auto & stream: stream_entries){
+            std::vector<atom::entry<BufferType, MsgPackType>> deserialized_entries;
+            for(auto & entry: stream){
+                if(!(vec_ind % 2)){
+                    stream_timestamps[vec_ind] = entry.first; //update redis timestamp from which we read in the next loop
+                }
+                ser.deserialize(deserialized_entries, serialization, entry, err);
+                atom::entry<BufferType, MsgPackType> & current_entry = deserialized_entries.back();
+               // streams_map.at(entry.first) //Todo this, we need to change the structure of the entry_response_list. instead of vector, need map with key as stream name
+
+            }
+        }
+    }
+
+
+}
 
 
 ///send commands to an element and optionally waits for acknowledgement ACK
@@ -145,6 +174,21 @@ void entry_read_loop(std::map<std::string, std::map<std::string, atom::StreamHan
 atom::element_response send_command(std::string element_name, std::string command_name, bool block=true,
                                 std::chrono::milliseconds timeout=std::chrono::milliseconds(atom::params::ACK_TIMEOUT),
                                 std::string serialization="");
+
+///Get timestamp from redis
+std::string get_redis_timestamp(){
+    atom::error err;
+    atom::redis_reply<BufferType> reply = connection->time(err);
+    auto entry = reply.entry_response();
+    assert(entry.size() == 1);
+    std::string timestamp;
+    for(auto & m : entry){
+        std::string microseconds(*m.second[0].first.get(), 3);
+        timestamp = m.first + microseconds;
+    }
+    connection->release_rx_buffer(reply);
+    return timestamp;
+}
 
 ///Get names of all Elements connected to Redis
 ///@return vector of element names
@@ -200,9 +244,6 @@ void wait_for_healthcheck(std::vector<std::string> element_names);
 
 
 private:
-
-///get serialization method from response
-std::tuple<atom::Serialization::method, int> get_serialization_method(std::vector<atom::reply_type::flat_response>& entry_data);
 
 ///response id creation helper
 std::string make_response_id(std::string element_name);

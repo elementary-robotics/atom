@@ -37,7 +37,8 @@ public:
     enum method {
         none, ///< no serialization
         msgpack, ///< msgpack c++ serialization
-        arrow ///< arrow (not supported yet)
+        arrow, ///< arrow (not supported yet)
+        not_found
     };
 
     Serialization() : method_strings({
@@ -101,7 +102,7 @@ public:
     }
 
     template<typename BufferType, typename MsgPackType>
-    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, std::string serialization, atom::reply_type::entry_response_list & data, atom::error & err){
+    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, atom::Serialization::method serialization, atom::reply_type::entry_response_list & data, atom::error & err){
         //Be aware that we can keep using the vector as-is only because we read from one stream at a time in our elements.
         for(auto & entry_response : data){
             deserialize(entries, serialization, entry_response, err);
@@ -109,18 +110,29 @@ public:
     }
 
     template<typename BufferType, typename MsgPackType>
-    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, std::string serialization, atom::reply_type::entry_response & data, atom::error & err){
+    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, atom::Serialization::method serialization, atom::reply_type::entry_response & data, atom::error & err){
         for(auto & entry_map: data){
+            deserialize(entries, serialization, entry_map, err);
+        }
+    }
+    
+    template<typename BufferType, typename MsgPackType>
+    void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, atom::Serialization::method serialization, 
+                        std::pair<std::string, std::vector<atom::reply_type::flat_response>> entry_map, atom::error & err){
+        
             std::string uid = entry_map.first;
 
             //find the serialization method
             std::tuple<atom::Serialization::method,int> method = get_serialization_method(entry_map.second);
             atom::Serialization::method ser_method = std::get<0>(method);
             logger.debug("Serialization method found: " + method_strings.at(ser_method) );
-            
-            //TODO figure out how to do the case where there is no serialization method found in the keys
-            //TODO if the serialization method is there ignore the serialization arg passed in
 
+            //handle case where there is no serialization method found in the keys
+            // if the serialization method is there ignore the serialization arg passed in
+            if(ser_method == atom::Serialization::method::not_found){
+                ser_method = serialization;
+            }
+            
             int position = std::get<1>(method);
             bool is_val = false;
 
@@ -169,7 +181,8 @@ public:
                 default:
                     throw std::runtime_error("Supplied deserialization option is invalid.");
             }
-        }
+        
+    
     }
 
 
@@ -196,7 +209,7 @@ public:
             }
             counter++;
         }
-        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::none, 0);
+        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::not_found, 0);
     }
 
 

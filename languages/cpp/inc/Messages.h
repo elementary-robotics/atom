@@ -267,7 +267,7 @@ public:
         return boost::get<raw_entry<BufferType>>(data);
     }
 
-   arrow_entry<BufferType> get_arrow(){
+    arrow_entry<BufferType> get_arrow(){
         return boost::get<arrow_entry<BufferType>>(data); //TODO implement and test
     }
 
@@ -293,8 +293,25 @@ struct reference {
 
 };
 
+
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+using Handler = void(*)(atom::entry<BufferType, MsgPackType>);
+
 ///function signature for a stream handler, params are element_name and stream_name
-typedef std::function<void(std::string, std::string)> StreamHandler;
+template<typename BufferType = boost::asio::streambuf, typename MsgPackType = msgpack::type::variant>
+class StreamHandler{
+
+public:
+
+    StreamHandler(std::string element_name, std::string stream_name, Handler<BufferType, MsgPackType> handler) : element_name(element_name),
+                                                                    stream_name(stream_name),
+                                                                    handler(handler){};
+    
+    std::string element_name;
+    std::string stream_name;
+
+    Handler<BufferType, MsgPackType> handler;
+};
 
 ///function signature for read handler, params are an entry and user-supplied data
 template<typename BufferType, typename MsgPackType>

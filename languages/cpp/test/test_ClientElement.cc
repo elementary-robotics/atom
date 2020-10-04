@@ -70,11 +70,11 @@ TEST_F(ClientElementTest, entry_read_n_msgpack){
     msgpack::pack(ss2, my_data[3]);
     my_data[3] = ss2.str();
 
-    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"msgpack", my_data, err);
+    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name, "msgpack", my_data, err);
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "2", err);
 
     //read the entry
-    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, "msgpack", false);
+    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, atom::Serialization::method::msgpack, false);
 
     //verify keys
     EXPECT_THAT(entries[0].get_msgpack().data[0].key(), my_data[0]);
@@ -104,11 +104,11 @@ TEST_F(ClientElementTest, entry_read_n_none){
 
     //serialize and write an entry like server element would
     std::vector<std::string> my_data = {"hello", "world", "ice_cream", "chocolate"};
-    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"none", my_data, err);
+    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name, "none", my_data, err);
     atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xrevrange(stream_name, "+", "-", "1", err);
 
     //read the entry
-    auto entries = client_elem.entry_read_n<>("MyElem", "client_stream", 1, err, "none", false);
+    auto entries = client_elem.entry_read_n<>("MyElem", "client_stream", 1, err, atom::Serialization::method::none, false);
 
      //verify keys
     EXPECT_THAT(entries[0].get_raw().data[0].key(), my_data[0]);
@@ -136,7 +136,7 @@ TEST_F(ClientElementTest, entry_read_since){
 
     //serialize and write an entry like server element would
     std::vector<std::string> my_data = {"hello", "world", "ice_cream", "chocolate"};
-    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name,"none", my_data, err);
+    atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply1 = redis.xadd(stream_name, "none", my_data, err);
 
     auto flat = reply1.flat_response();
     std::string id = atom::reply_type::to_string(flat);
@@ -147,13 +147,13 @@ TEST_F(ClientElementTest, entry_read_since){
     //write the entry
     std::thread t1([&]{
         sleep(2);
-        atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xadd("stream:MyElem:client_stream","none", my_data, err);
+        atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xadd(stream_name, "none", my_data, err);
         reply2.cleanup();
     });
 
     //read entries
     std::thread t2([&]{
-        entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "10000", "none", false);
+        entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "10000", atom::Serialization::method::none, false);
     });
 
     t2.join();
@@ -175,7 +175,64 @@ TEST_F(ClientElementTest, entry_read_since){
 
 TEST_F(ClientElementTest, entry_read_since_timeout){
 
+    atom::error err;
     std::vector<atom::entry<boost::asio::streambuf, msgpack::type::variant>> entries;
-    entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "1000", "none", false);
+    auto start = std::chrono::high_resolution_clock::now();
+    entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "1000", atom::Serialization::method::none, false);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> dur = end - start;
+
+    EXPECT_GT(dur.count(), 1);
+    EXPECT_EQ(entries.size(), 0);
+}
+
+TEST_F(ClientElementTest, entry_read_since_block0){
+
+    std::string stream_name = "stream:MyElem:client_stream";
+    atom::error err;
+    std::vector<std::string> data{"yaba", "daba", "doo", "!"};
+    std::vector<atom::entry<boost::asio::streambuf, msgpack::type::variant>> entries;
+    auto start = std::chrono::high_resolution_clock::now();
+    
+
+    //write the entry
+    std::thread t1([&]{
+        sleep(2);
+        atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply2 = redis.xadd(stream_name, "none", data, err);
+        reply2.cleanup();
+    });
+
+    //read entries
+    std::thread t2([&]{
+        entries = client_elem.entry_read_since<>("MyElem", "client_stream", 1, err, "$", "0", atom::Serialization::method::none, false);
+    });
+
+    t2.join();
+    t1.join();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> dur = end - start;
+
+    EXPECT_GT(dur.count(), 2);
+    EXPECT_EQ(entries.size(), 1);
+}
+
+void my_handler(atom::entry<boost::asio::streambuf> entry){
+    std::cout<<"Hey I'm a stream handler!"<<std::endl;
+    entry.get_msgpack();
+}
+
+
+TEST_F(ClientElementTest, entry_read_loop){
+    
+    std::string stream_name = "stream:MyElem:client_stream";
+    atom::error err;
+
+    atom::StreamHandler<> handler1("MyElem", "client_stream", &my_handler);
+
+    std::vector<atom::StreamHandler<>> my_stream_handlers{handler1};
+    
+    client_elem.entry_read_loop(my_stream_handlers, 1);
 
 }

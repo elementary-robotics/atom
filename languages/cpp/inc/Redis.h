@@ -200,6 +200,17 @@ class Redis {
         }
 
         //xread operation
+        atom::redis_reply<buffer> xread( std::vector<std::string>& streams_timestamps, atom::error & err){
+            std::vector<std::string> command = {"XREAD" , "STREAMS"};
+            command.insert(command.end(), streams_timestamps.begin(), streams_timestamps.end());
+            
+            bredis::single_command_t cmd = bredis::single_command_t{command.cbegin(), command.cend()};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
+            return read_reply(atom::reply_type::options::entry_maplist, err);
+        }
+        
+        //xread operation
         atom::redis_reply<buffer> xread( std::string count, std::string stream_name, std::string id, atom::error & err){
             bredis::single_command_t cmd = bredis::single_command_t{ "XREAD" , "COUNT", count, "STREAMS", stream_name, id};
             bredis_con->write(cmd, err);
@@ -242,6 +253,12 @@ class Redis {
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
+        // time operation
+        atom::redis_reply<buffer> time(atom::error & err){
+            bredis_con->write(bredis::single_command_t{"TIME"}, err);
+            return read_reply(atom::reply_type::options::entry_map, err);
+        }
+        
         // helper function for tokenizing redis replies
         std::vector<std::string> tokenize(std::string s, std::string delimiter) {
             size_t pos_start = 0, pos_end, delim_len = delimiter.length();
@@ -274,8 +291,8 @@ class Redis {
                 if(!err){
                     redis_check(result_markers, err);
                     if(!err){
-                        //const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
-                        //logger.debug("raw data: " + std::string(data));
+                        const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
+                        logger.debug("raw data: " + std::string(data));
                         if(process_resp){
                             atom::reply_type::parsed_reply parsed = parser.process(pooled_buffer->io_buff, parse_option, err);
                             return atom::redis_reply<buffer>(result_markers.consumed, 

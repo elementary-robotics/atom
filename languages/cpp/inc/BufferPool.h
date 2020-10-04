@@ -83,6 +83,7 @@ void init(){
 ///@return a shared pointer to a pooled buffer
 std::shared_ptr<atom::pooled_buffer<buffer>> get_buffer(){
     std::unique_lock<std::mutex> lock(mutex);
+    logger.debug("get_buffer()");
     if(!check_available()){
         //if not available, and below max limit, make a new one
         if(count_buffers() < atom::params::BUFFER_CAP){
@@ -125,6 +126,7 @@ void release_buffer(std::shared_ptr<atom::pooled_buffer<buffer>> buf, size_t siz
 ///wait until one of the pooled buffers is available for use, determined by whether a buffer reaches zero references
 ///@param lock reference to a unique lock
 void wait_for_buffer(std::unique_lock<std::mutex> &lock){
+    logger.debug("wait_for_buffer(lock)");
     if(timeout > std::chrono::milliseconds(0)){
         if(!cond_var.wait_for(lock, timeout, [this] {return (this->check_available()); })){
             std::string message = "No available buffers were released in " + std::to_string(timeout.count()) + " milliseconds";
@@ -139,11 +141,14 @@ void wait_for_buffer(std::unique_lock<std::mutex> &lock){
 ///scan for a pooled buffer that is available (has zero references)
 ///@return boolean indicating whether there is at least one buffer in the pool available for use
 bool check_available(){
+    logger.debug("check_available()");
     for(auto & b : buffers){
         if(b->get_refs() == 0){
+            logger.debug("buffer available");
             return true;
         }
     }
+    logger.debug("buffer not available");
     return false;
 }
 

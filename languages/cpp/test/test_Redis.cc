@@ -261,7 +261,7 @@ TEST_F(RedisTest, xread){
     auto data = boost::get<atom::reply_type::entry_response_list>(reply.parsed_reply);
 
     for(auto v: data){
-        for(auto m: v){
+        for(auto m: v.second){
         EXPECT_THAT(m.first, ::testing::ContainsRegex("[0-9]{1,13}-[0-9]?"));
         for(auto p: m.second){
             EXPECT_THAT(p.second,::testing::Ge(0));

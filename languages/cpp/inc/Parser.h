@@ -38,7 +38,7 @@ namespace reply_type {
 
     ///entry response list: holds replies from XREAD, XREADGROUP, etc.
     ///vector of entry maps, indexed by streams requested in outgoing command to Redis
-    using entry_response_list = std::vector<entry_response>;
+    using entry_response_list = std::map<std::string, entry_response>;
 
     ///parsed reply: boost::variant of flat_response, entry_response, or entry_response_list
     ///used as return type by Parser::process
@@ -127,8 +127,8 @@ public:
     void maplist_dbg(atom::reply_type::entry_response_list& pointers_maplist){
         int counter=0;
         for(auto& v: pointers_maplist){
-            logger.debug("-------------" + std::to_string(counter) + "--------------");
-            map_dbg(v);
+            logger.debug("-------------[ " + v.first + " ]--------------");
+            map_dbg(v.second);
             counter++;
             logger.debug("----------------------------");
         }
@@ -312,7 +312,7 @@ private:
                 logger.debug("process array| array");
                     if(stream_name_read){
                         atom::reply_type::entry_response entry_map = process_entry(it, end, err);
-                        parsed_response.push_back(entry_map);
+                        parsed_response.emplace(stream_name, entry_map);
                         stream_read=true;
                     }
                     break;

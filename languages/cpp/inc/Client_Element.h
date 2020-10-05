@@ -129,6 +129,7 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
     for(auto & handler: stream_handlers){
         const std::string stream_id = make_stream_id(handler.element_name, handler.stream_name);
         stream_timestamps.push_back(stream_id);
+        logger.debug("stream id: " + stream_id);
         stream_timestamps.push_back(get_redis_timestamp());
         streams_map.emplace(stream_id, handler.handler);
     }
@@ -148,15 +149,17 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
         auto stream_entries = data.entry_response_list();
         int vec_ind = 0;
         for(auto & stream: stream_entries){
+            std::string stream_name = stream.first;
             std::vector<atom::entry<BufferType, MsgPackType>> deserialized_entries;
-            for(auto & entry: stream){
-                if(!(vec_ind % 2)){
+            for(auto & entry: stream.second){
+                if(vec_ind % 2){
                     stream_timestamps[vec_ind] = entry.first; //update redis timestamp from which we read in the next loop
                 }
                 ser.deserialize(deserialized_entries, serialization, entry, err);
                 atom::entry<BufferType, MsgPackType> & current_entry = deserialized_entries.back();
-               // streams_map.at(entry.first) //Todo this, we need to change the structure of the entry_response_list. instead of vector, need map with key as stream name
-
+                logger.debug("entry.first: " + entry.first+ ", stream_name " + stream_name);
+                streams_map.at(stream_name)(current_entry); //execute handler
+                vec_ind++;
             }
         }
     }

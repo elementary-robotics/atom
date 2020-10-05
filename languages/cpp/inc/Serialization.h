@@ -44,12 +44,14 @@ public:
     Serialization() : method_strings({
             {method::none, "none"},
             {method::msgpack, "msgpack"},
-            {method::arrow, "arrow"}
+            {method::arrow, "arrow"},
+            {method::not_found, "not found"}
         }), logger(&std::cout, "Serializer"){}
     Serialization(std::ostream& logstream, std::string log_name) : method_strings({
             {method::none, "none"},
             {method::msgpack, "msgpack"},
-            {method::arrow, "arrow"}
+            {method::arrow, "arrow"},
+            {method::not_found, "not found"}
         }), logger(&logstream, log_name){}
 
     virtual ~Serialization(){}
@@ -105,7 +107,7 @@ public:
     void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, atom::Serialization::method serialization, atom::reply_type::entry_response_list & data, atom::error & err){
         //Be aware that we can keep using the vector as-is only because we read from one stream at a time in our elements.
         for(auto & entry_response : data){
-            deserialize(entries, serialization, entry_response, err);
+            deserialize(entries, serialization, entry_response.second, err);
         }
     }
 

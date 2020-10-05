@@ -145,7 +145,7 @@ class redis_reply {
     ///@param entries_list object to clean up
     void cleanup(atom::reply_type::entry_response_list & entries_list){
         for(auto & map : entries_list){
-            cleanup(map);
+            cleanup(map.second);
         }
     }
     

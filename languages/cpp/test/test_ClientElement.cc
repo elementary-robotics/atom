@@ -225,14 +225,24 @@ void my_handler(atom::entry<boost::asio::streambuf> entry){
 
 
 TEST_F(ClientElementTest, entry_read_loop){
-    
+
     std::string stream_name = "stream:MyElem:client_stream";
     atom::error err;
 
     atom::StreamHandler<> handler1("MyElem", "client_stream", &my_handler);
 
+    std::string current_time = client_elem.get_redis_timestamp();
+    std::string id = current_time;
+    for(int i = 0; i < 3; i++){
+        id = std::to_string(std::stol(id) + 10 + i);
+        const char * data = ("data " + std::to_string(i)).c_str();
+        atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply = redis.xadd(stream_name, id, "key_" + std::to_string(i), data, err);
+        redis.release_rx_buffer(reply);
+    }
+
     std::vector<atom::StreamHandler<>> my_stream_handlers{handler1};
     
     client_elem.entry_read_loop(my_stream_handlers, 1);
 
+    //TODO add verifying statements
 }

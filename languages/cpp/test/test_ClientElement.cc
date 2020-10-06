@@ -18,7 +18,7 @@
 #include "Serialization.h"
 
 using my_type = msgpack::type::tuple<int, bool, std::string>;
-
+int callback_counter = 0;
 
 class ClientElementTest : public testing::Test {
 
@@ -219,6 +219,7 @@ TEST_F(ClientElementTest, entry_read_since_block0){
 }
 
 void my_handler(atom::entry<boost::asio::streambuf> entry){
+    callback_counter++;
     std::cout<<"Hey I'm a stream handler!"<<std::endl;
     entry.get_msgpack();
 }
@@ -244,5 +245,6 @@ TEST_F(ClientElementTest, entry_read_loop){
     
     client_elem.entry_read_loop(my_stream_handlers, 1);
 
-    //TODO add verifying statements
+    EXPECT_THAT(callback_counter, 3);
+    callback_counter = 0;
 }

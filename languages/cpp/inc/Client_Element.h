@@ -15,6 +15,7 @@
 #define __ATOM_CPP_CLIENT_ELEMENT_H
 
 #include <iostream>
+#include <chrono>
 
 #include "ConnectionPool.h"
 #include "Serialization.h"
@@ -174,9 +175,55 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
 ///@param block Optional argument, if true wait for an element response from the function
 ///@param timeout Optional argument, how long to wait for an acknowledgement before timing out
 ///@param serialization Optional argument, used for applying deserialziation method to entries
-atom::element_response send_command(std::string element_name, std::string command_name, bool block=true,
+///@tparam DataType can be std::vector<msgpack::type::variant> or std::vector<std::string> for no serialization or msgpack serialization, and in the future arrow for arrow serialization
+template<typename DataType, typename MsgPackType = msgpack::type::variant>
+atom::element_response<DataType, MsgPackType> send_command(std::string element_name, std::string command_name, 
+                                DataType data, atom::error err, bool block=true,
                                 std::chrono::milliseconds timeout=std::chrono::milliseconds(atom::params::ACK_TIMEOUT),
-                                std::string serialization="");
+                                atom::Serialization::method serialization=atom::Serialization::method::msgpack){
+    std::string local_last_id = last_response_id;
+
+
+    //serialize data
+    std::vector<std::string> serialized_data = ser.serialize(data, serialization, err);
+
+    //create a command
+    atom::command<BufferType, MsgPackType> cmd(element_name, command_name, std::make_shared<atom::entry<BufferType, MsgPackType>>(data));
+    
+    //get connection from pool
+    ConnectionType a_con = pool.get_connection<ConnectionType>();
+    a_con.connect(err);
+    if(err){
+        logger.critical("Unable to connect to Redis.");
+        throw std::runtime_error("Unable to connect to Redis.");
+    }
+
+    //send serialized data and grab command id
+    atom::redis_reply<BufferType> reply = a_con.xadd(make_command_id(element_name), serialized_data, err, atom::params::STREAM_LEN);
+    std::string command_id = atom::reply_type::to_string(reply.flat_response());
+    a_con.release_rx_buffer(reply);
+
+    //attempt to receive ACK from a server element until timeout is reached
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::duration elapsed_time(0);
+    while(elapsed_time < timeout){
+        elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
+        std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
+        std::string block_time = std::to_string(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(timeout - elapsed_time), std::chrono::milliseconds(1)).count());
+        atom::redis_reply<BufferType> responses = a_con.xread(streams_timestamps, err, block_time);
+        auto response_list = responses.entry_response_list();
+        if(response_list.empty()){
+            elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
+            if(elapsed_time >= timeout){
+                err.set_error_code(atom::error_codes::no_response);
+                logger.error("Did not receive acknowledgement from " + element_name);
+                return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
+            }
+        }
+
+    }
+
+}
 
 ///Get timestamp from redis
 std::string get_redis_timestamp(){
@@ -271,6 +318,9 @@ Serialization ser;
 
 ///logging
 Logger logger;
+
+///last reponse id - tracks the last entry where the client response stream was read
+std::string last_response_id;
 
 };
 

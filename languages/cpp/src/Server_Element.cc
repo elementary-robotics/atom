@@ -5,8 +5,8 @@
 
 #include "Messages.h"
 
-template<typename ConnectionType, typename BufferType>
-atom::Server_Element<ConnectionType, BufferType>::Server_Element(boost::asio::io_context & iocon, int max_cons, int timeout, std::string redis_ip, 
+template<typename ConnectionType, typename BufferType, typename MsgPackType>
+atom::Server_Element<ConnectionType, BufferType, MsgPackType>::Server_Element(boost::asio::io_context & iocon, int max_cons, int timeout, std::string redis_ip, 
                     Serialization& serialization, int num_buffs, int buff_timeout,
                     int num_tcp, int num_unix, 
                     std::ostream& log_stream, std::string element_name) : name(element_name),
@@ -32,9 +32,9 @@ atom::Server_Element<ConnectionType, BufferType>::Server_Element(boost::asio::io
 
 
 //TODO
-template<typename ConnectionType, typename BufferType>
-atom::Server_Element<ConnectionType, BufferType>::~Server_Element(){}
+template<typename ConnectionType, typename BufferType, typename MsgPackType>
+atom::Server_Element<ConnectionType, BufferType, MsgPackType>::~Server_Element(){}
 
 
-template class atom::Server_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type>;
-template class atom::Server_Element<atom::ConnectionPool::TCP_Redis, atom::ConnectionPool::Buffer_Type>;
+template class atom::Server_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type, msgpack::type::variant>;
+template class atom::Server_Element<atom::ConnectionPool::TCP_Redis, atom::ConnectionPool::Buffer_Type, msgpack::type::variant>;

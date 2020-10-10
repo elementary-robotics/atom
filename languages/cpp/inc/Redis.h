@@ -124,16 +124,27 @@ class Redis {
         }
 
         // xadd operation
-        atom::redis_reply<buffer> xadd(std::string stream_name, std::string field, const bytes_t * data, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, data }, err);
+        atom::redis_reply<buffer> xadd(std::string stream_name, std::string field, const bytes_t * data, atom::error & err, int max_len = 0){
+            if(max_len > 0){
+                bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "MAXLEN", "~", std::to_string(max_len), "*", field, data }, err);
+            }
+            else{
+                bredis_con->write(bredis::single_command_t{ "XADD", stream_name, "*", field, data }, err);
+            }
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         // xadd operation - without automatically generated ids
-        atom::redis_reply<buffer> xadd(std::string stream_name, std::string id, std::string field, const bytes_t * data, atom::error & err){
-            bredis::single_command_t cmd = bredis::single_command_t{ "XADD", stream_name, id, field, data };
-            bredis_con->write(cmd, err);
-            redis_debug(cmd.arguments);
+        atom::redis_reply<buffer> xadd(std::string stream_name, std::string id, std::string field, const bytes_t * data, atom::error & err, int max_len = 0){
+            if(max_len > 0){
+                bredis::single_command_t cmd = bredis::single_command_t{ "XADD", stream_name, "MAXLEN", "~", std::to_string(max_len), id, field, data };
+                bredis_con->write(cmd, err);
+                redis_debug(cmd.arguments);
+            }else{
+                bredis::single_command_t cmd = bredis::single_command_t{ "XADD", stream_name, id, field, data };
+                bredis_con->write(cmd, err);
+                redis_debug(cmd.arguments);
+            }
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
@@ -146,9 +157,14 @@ class Redis {
         }
 
         // xadd operation with vector argument
-        atom::redis_reply<buffer> xadd(std::string stream_name, std::string method, std::vector<std::string>& entry_map, atom::error & err){
-            std::vector<std::string> command = {"XADD", stream_name, "*", "ser", method};
-            command.insert(command.end(), entry_map.begin(), entry_map.end());
+        atom::redis_reply<buffer> xadd(std::string stream_name, std::string method, std::vector<std::string>& entry_data, atom::error & err, int max_len = 0){
+            std::vector<std::string> command;
+            if(max_len > 0){
+                command = { "XADD", stream_name, "MAXLEN", "~", std::to_string(max_len), "*", "ser", method};
+            }else{
+                command = {"XADD", stream_name, "*", "ser", method};
+            }
+            command.insert(command.end(), entry_data.begin(), entry_data.end());
             
             bredis::single_command_t cmd = bredis::single_command_t{command.cbegin(), command.cend()};
             bredis_con->write(cmd, err);
@@ -200,8 +216,13 @@ class Redis {
         }
 
         //xread operation
-        atom::redis_reply<buffer> xread( std::vector<std::string>& streams_timestamps, atom::error & err){
-            std::vector<std::string> command = {"XREAD" , "STREAMS"};
+        atom::redis_reply<buffer> xread( std::vector<std::string>& streams_timestamps, atom::error & err, int block = 0){
+            std::vector<std::string> command; 
+            if(block > 0){
+                command = {"XREAD" , "BLOCK", std::to_string(block), "STREAMS"};
+            } else{
+                command = {"XREAD" , "STREAMS"};
+            }
             command.insert(command.end(), streams_timestamps.begin(), streams_timestamps.end());
             
             bredis::single_command_t cmd = bredis::single_command_t{command.cbegin(), command.cend()};

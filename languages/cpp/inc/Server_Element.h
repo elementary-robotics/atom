@@ -24,7 +24,7 @@
 
 namespace atom{
 
-template<typename ConnectionType, typename BufferType>
+template<typename ConnectionType, typename BufferType, typename MsgPackType = msgpack::type::variant>
 class Server_Element {
     public:
         Server_Element(boost::asio::io_context & iocon, int max_cons, int timeout, std::string redis_ip, 
@@ -86,7 +86,7 @@ class Server_Element {
     private:
         std::string name;
         std::map<std::string, atom::reference> references;
-        std::map<std::string, atom::CommandHandler<BufferType>> command_handlers;
+        std::map<std::string, atom::CommandHandler<BufferType, MsgPackType>> command_handlers;
         std::vector<std::string> streams;
         std::string atom_version;
         std::string atom_language;

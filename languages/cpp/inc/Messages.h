@@ -273,16 +273,28 @@ public:
 
 };
 
+///Holds the different forms of entry_types that we could expect to see.
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+class command {
+public:
+    command(std::string element_name, std::string command_name, std::shared_ptr<atom::entry<BufferType, MsgPackType>> data) :
+                                        element_name(element_name), command_name(command_name), entry_data(entry_data){};
+    std::string element_name;
+    std::string command_name;
+    std::shared_ptr<atom::entry<BufferType, MsgPackType>> entry_data;
+};
+
 ///Holds a response from a Server_Element. 
 ///@param data response data
 ///@param serialization_method string that indicates which serialization method to use. Currently only msgpack is supported.
 ///@param err holds error code and msg information, if any errors occur.
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 struct element_response {
-    std::shared_ptr<const char *> data;
+    std::shared_ptr<atom::entry<BufferType, MsgPackType>> data;
     std::string serialization_method;
     atom::error err;
 
-    element_response(std::shared_ptr<const char *> data, 
+    element_response(std::shared_ptr<atom::entry<BufferType, MsgPackType> > data, 
                     std::string method, atom::error err) : data(data),
                                                         serialization_method(method),
                                                         err(err){};
@@ -314,15 +326,16 @@ public:
 };
 
 ///function signature for read handler, params are an entry and user-supplied data
-template<typename BufferType, typename MsgPackType>
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 using ReadHandler = std::function<bool(atom::entry<BufferType, MsgPackType>&, void*)>;
 
 ///function signature for command handler, params are redis reply, element response, and error 
-template<typename BufferType>
-using CommandHandler = std::function<element_response(atom::redis_reply<BufferType>&, element_response&, atom::error&)>;
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+using CommandHandler = std::function<void(atom::redis_reply<BufferType>&, element_response<BufferType, MsgPackType>&, atom::error&)>;
 
 ///function signature for health checking - TODO: MOVE THIS TO THE SERVER ELEMENT
-typedef std::function<element_response(void *)> HealthChecker;
+template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+using HealthChecker = std::function<element_response<BufferType, MsgPackType>(void *)>;
 
 }
 

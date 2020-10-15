@@ -38,7 +38,7 @@ namespace reply_type {
 
     ///entry response list: holds replies from XREAD, XREADGROUP, etc.
     ///vector of entry maps, indexed by streams requested in outgoing command to Redis
-    using entry_response_list = std::map<std::string, entry_response>;
+    using entry_response_list = std::map<std::string, entry_response>; //TODO: call this stream_response instead.
 
     ///parsed reply: boost::variant of flat_response, entry_response, or entry_response_list
     ///used as return type by Parser::process

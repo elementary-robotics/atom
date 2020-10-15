@@ -24,6 +24,12 @@
 
 namespace atom {
 
+struct longest{
+    template<class T> bool operator()(T const &one, T const& two){
+        return one.size() < two.size();
+    }
+};
+
 const std::map<std::string, std::vector<std::string>> reserved_keys = {
     {"command_keys", {"data", "cmd", "element", "ser"}},
     {"response_keys", {"data", "err_code", "err_str", "element", "cmd", "cmd_id", "ser"}},

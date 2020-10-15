@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <algorithm>
 
 #include "ConnectionPool.h"
 #include "Serialization.h"
@@ -179,10 +180,10 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
 template<typename DataType, typename MsgPackType = msgpack::type::variant>
 atom::element_response<DataType, MsgPackType> send_command(std::string element_name, std::string command_name, 
                                 DataType data, atom::error err, bool block=true,
-                                std::chrono::milliseconds timeout=std::chrono::milliseconds(atom::params::ACK_TIMEOUT),
+                                std::chrono::milliseconds ack_timeout=std::chrono::milliseconds(atom::params::ACK_TIMEOUT),
                                 atom::Serialization::method serialization=atom::Serialization::method::msgpack){
     std::string local_last_id = last_response_id;
-
+    std::string timeout = ""; //to be updated with timeout info in response
 
     //serialize data
     std::vector<std::string> serialized_data = ser.serialize(data, serialization, err);
@@ -203,23 +204,119 @@ atom::element_response<DataType, MsgPackType> send_command(std::string element_n
     std::string command_id = atom::reply_type::to_string(reply.flat_response());
     a_con.release_rx_buffer(reply);
 
-    //attempt to receive ACK from a server element until timeout is reached
+    //attempt to receive ACK from a server element until ack_timeout is reached
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::duration elapsed_time(0);
-    while(elapsed_time < timeout){
+    int longest_reserved_key = std::max_element(atom::reserved_keys.at("response_keys").begin(), 
+                                                atom::reserved_keys.at("response_keys").end(), atom::longest())->size();
+    while(elapsed_time < ack_timeout){
         elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
         std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
-        std::string block_time = std::to_string(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(timeout - elapsed_time), std::chrono::milliseconds(1)).count());
-        atom::redis_reply<BufferType> responses = a_con.xread(streams_timestamps, err, block_time);
+        std::string block_time = std::to_string(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(ack_timeout - elapsed_time), std::chrono::milliseconds(1)).count());
+        atom::redis_reply<BufferType> responses = a_con.xread(streams_timestamps, err, block_time); //TODO: do we want to use a_con? or the class member con?
         auto response_list = responses.entry_response_list();
         if(response_list.empty()){
             elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
-            if(elapsed_time >= timeout){
+            if(elapsed_time >= ack_timeout){
                 err.set_error_code(atom::error_codes::no_response);
                 logger.error("Did not receive acknowledgement from " + element_name);
                 return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
             }
+        }else{
+            continue;
         }
+
+        std::string stream = response_list.begin()->first;
+        atom::reply_type::entry_response entries = response_list.begin()->second;
+        for(auto & entry: entries){
+            local_last_id = entry.first;
+            std::vector<bool> conditions = {false, false, false};
+            std::string new_ack_timeout;
+            //inspect keys for "element", "cmd_id", and "timeout" --> update timeout if all three are found.
+            for(int i = 0; i < entry.second.size() - 1; i+=2){
+                if(entry.second[i].second <= longest_reserved_key){
+                    if(atom::reply_type::to_string(entry.second[i]) == "element" && atom::reply_type::to_string(entry.second[i+1]) == element_name){
+                        conditions[0] = true;
+                    }
+                    else if(atom::reply_type::to_string(entry.second[i]) == "cmd_id" && atom::reply_type::to_string(entry.second[i+1]) == command_id){
+                        conditions[1] = true;
+                    }
+                    else if(atom::reply_type::to_string(entry.second[i]) == "timeout" ){
+                        conditions[2] = true;
+                        new_ack_timeout = atom::reply_type::to_string(entry.second[i+1]);
+                    }
+                }
+            }
+            if(std::all_of(conditions.begin(), conditions.end(), [](bool c){return c;})){
+                timeout = new_ack_timeout;
+            }
+            update_response_id(local_last_id);
+        }
+    }
+
+    //if timeout is empty, then we didn't receive timeout information from the desired element and command id
+    if(timeout.empty()){
+        err.set_error_code(atom::error_codes::no_response);
+        logger.error("Did not receive acknowledgement from " + element_name);
+        return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
+    }
+
+    std::chrono::high_resolution_clock::duration response_timeout(std::stoi(timeout));
+    start = std::chrono::high_resolution_clock::now();
+    elapsed_time = 0;
+    while(elapsed_time < response_timeout){
+        elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
+        std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
+        std::string block_time = std::to_string(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(response_timeout - elapsed_time), std::chrono::milliseconds(1)).count());
+        atom::redis_reply<BufferType> responses = a_con.xread(streams_timestamps, err, block_time); //TODO: again, do we want to use a_con? or the class member con?
+        auto response_list = responses.entry_response_list();
+        
+        if(response_list.empty()){
+            err.set_error_code(atom::error_codes::no_response);
+            logger.error("Did not receive acknowledgement from " + element_name);
+            return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
+        }
+
+        std::string stream_name = response_list.begin()->first;
+        atom::reply_type::entry_response entries = response_list.begin()->end();
+        for(auto & entry : entries){
+            std::string id = entry.first;
+            
+            std::vector<bool> conditions = {false, false, false};
+            bool ser_found = false;
+            std::string err_code, err_str, ser_method;
+            //inspect keys for "element", "cmd_id", and "timeout" --> update timeout if all three are found.
+            for(int i = 0; i < entry.second.size() - 1; i+=2){
+                if(entry.second[i].second <= longest_reserved_key){
+                    if(atom::reply_type::to_string(entry.second[i]) == "element" && atom::reply_type::to_string(entry.second[i+1]) == element_name){
+                        conditions[0] = true;
+                    }
+                    else if(atom::reply_type::to_string(entry.second[i]) == "cmd_id" && atom::reply_type::to_string(entry.second[i+1]) == command_id){
+                        conditions[1] = true;
+                    }
+                    else if(atom::reply_type::to_string(entry.second[i]) == "err_code" ){
+                        conditions[2] = true;
+                        err_code = atom::reply_type::to_string(entry.second[i+1]);
+                    }
+                    else if(atom::reply_type::to_string(entry.second[i]) == "err_str" ){
+                        ser_found = true;
+                        ser_method = atom::reply_type::to_string(entry.second[i+1]);
+                        err_str = atom::reply_type::to_string(entry.second[i+1]);
+                    }
+                }
+            }
+            if(std::all_of(conditions.begin(), conditions.end(), [](bool c){return c;})){
+                if(std::stoi(err_code) != atom::error_codes::no_error){
+                    logger.error(err_str);
+                }
+                if(ser_found){
+                    //serialization = atom::Serialization::method_strings
+                }
+            }
+        }
+
+
+
 
     }
 
@@ -295,6 +392,26 @@ void wait_for_healthcheck(std::vector<std::string> element_names);
 
 private:
 
+///response id update helper function
+void update_response_id(std::string local_last_id){
+    std::unique_lock<std::mutex> lock(mutex);
+    unsigned long long base = std::stoull(last_response_id.substr(0, 13));
+    unsigned long long base_new = std::stoull(local_last_id.substr(0, 13));
+
+    if(base < base_new){
+        last_response_id = local_last_id;
+    }
+    else if(base == base_new){
+        unsigned long seq = std::stoul(last_response_id.substr(14, std::string::npos));
+        unsigned long seq_new = std::stoul(local_last_id.substr(14, std::string::npos));
+        if(seq_new > seq){
+            last_response_id = local_last_id;
+        }
+    }
+    cond_var.notify_one();
+}
+
+
 ///response id creation helper
 std::string make_response_id(std::string element_name);
 
@@ -321,6 +438,11 @@ Logger logger;
 
 ///last reponse id - tracks the last entry where the client response stream was read
 std::string last_response_id;
+
+///thread mutex
+std::mutex mutex;
+
+std::condition_variable cond_var;
 
 };
 

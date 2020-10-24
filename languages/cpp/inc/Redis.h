@@ -181,37 +181,49 @@ class Redis {
 
         //xrange operation
         atom::redis_reply<buffer> xrange(std::string stream_name, std::string id_start, std::string id_end, std::string count, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XRANGE" , stream_name,  id_start, id_end, "COUNT", count}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{"XRANGE" , stream_name,  id_start, id_end, "COUNT", count};
+            bredis_con->write(cmd , err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_map, err);
         }
 
         //xrevrange operation
         atom::redis_reply<buffer> xrevrange(std::string stream_name, std::string id_start, std::string id_end,  atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XREVRANGE" , stream_name,  id_start, id_end}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XREVRANGE" , stream_name,  id_start, id_end};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_map, err);
         }
         
         //xrevrange operation - count specified
         atom::redis_reply<buffer> xrevrange(std::string stream_name, std::string id_start, std::string id_end, std::string count, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XREVRANGE" , stream_name,  id_start, id_end, "COUNT", count}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XREVRANGE" , stream_name,  id_start, id_end, "COUNT", count};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_map, err);
         }
 
         //xgroup operation
         atom::redis_reply<buffer> xgroup(std::string stream_name, std::string consumer_group_name, std::string last_id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XGROUP" , "CREATE", stream_name,  consumer_group_name, last_id, "MKSTREAM"}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XGROUP" , "CREATE", stream_name,  consumer_group_name, last_id, "MKSTREAM"};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
         //xgroup destroy operation
         atom::redis_reply<buffer> xgroup_destroy(std::string stream_name, std::string consumer_group_name, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XGROUP" , "DESTROY", stream_name,  consumer_group_name}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XGROUP" , "DESTROY", stream_name,  consumer_group_name};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         //xreadgroup operation
         atom::redis_reply<buffer> xreadgroup(std::string group_name, std::string consumer_name, std::string block, std::string count, std::string stream_name, std::string id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{ "XREADGROUP" , "GROUP", group_name, consumer_name, "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{ "XREADGROUP" , "GROUP", group_name, consumer_name, "BLOCK", block, "COUNT", count, "STREAMS", stream_name, id};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_maplist, err);
         }
 
@@ -249,19 +261,25 @@ class Redis {
 
         //xack operation
         atom::redis_reply<buffer> xack(std::string stream_name, std::string group_name, std::string id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{"XACK", stream_name, group_name, id}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{"XACK", stream_name, group_name, id};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
         //set operation - TODO: unpack and handle opt args
         atom::redis_reply<buffer> set(std::string stream_name, std::string id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{"SET", stream_name, id}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{"SET", stream_name, id};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
         
         //xdel operation - TODO: unpack and handle opt args
         atom::redis_reply<buffer> xdel(std::string stream_name, std::string id, atom::error & err){
-            bredis_con->write(bredis::single_command_t{"XDEL", stream_name, id}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{"XDEL", stream_name, id};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
@@ -276,7 +294,9 @@ class Redis {
 
         // time operation
         atom::redis_reply<buffer> time(atom::error & err){
-            bredis_con->write(bredis::single_command_t{"TIME"}, err);
+            bredis::single_command_t cmd = bredis::single_command_t{"TIME"};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
             return read_reply(atom::reply_type::options::entry_map, err);
         }
         

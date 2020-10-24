@@ -161,9 +161,9 @@ class redis_reply {
 
 namespace entry_type {
     template<typename DataType>
-    using deser_data = std::shared_ptr<DataType>;
+    using deser_data = std::shared_ptr<DataType>; //for the deserialized value
 
-    using str_data = std::shared_ptr<std::string>;
+    using str_data = std::shared_ptr<std::string>; //for the string key (which is not serialized OR deserialized)
 
     template<typename DataType>
     struct object {
@@ -205,13 +205,13 @@ template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 struct msgpack_entry {
     std::string field;
     std::vector<atom::entry_type::object<MsgPackType> > data;
-    std::shared_ptr<BufferType> base_buffer;
+    std::shared_ptr<atom::redis_reply<BufferType>> base_reply;
 
     msgpack_entry(std::string field, 
         std::vector<atom::entry_type::object<MsgPackType> >& data,
         atom::redis_reply<BufferType> reply) : field(field),
                                                 data(data),
-                                                base_buffer()
+                                                base_reply(std::make_shared<atom::redis_reply<BufferType>>(reply))
                                                 {};
     msgpack_entry(std::string field) : field(field){};
 
@@ -224,13 +224,13 @@ template<typename BufferType>
 struct raw_entry {
     std::string field;
     std::vector<atom::entry_type::object<const char *> > data;
-    std::shared_ptr<BufferType> base_buffer;
+    std::shared_ptr<atom::redis_reply<BufferType>> base_reply;
 
     raw_entry(std::string field, 
         std::vector<atom::entry_type::object<const char *> >& data,
         atom::redis_reply<BufferType> reply) : field(field),
                                                 data(data),
-                                                base_buffer()
+                                                base_reply(std::make_shared<atom::redis_reply<BufferType>>(reply))
                                                 {};
     raw_entry(std::string field) : field(field){};
 
@@ -243,13 +243,13 @@ template<typename BufferType, typename ArrowType = void> //TODO update that void
 struct arrow_entry {
     std::string field;
     std::vector<atom::entry_type::object<ArrowType> > data;
-    std::shared_ptr<BufferType> base_buffer;
+    std::shared_ptr<atom::redis_reply<BufferType>> base_reply;
 
     arrow_entry(std::string field, 
         std::vector<atom::entry_type::object<ArrowType> >& data,
         atom::redis_reply<BufferType> reply) : field(field),
                                                 data(data),
-                                                base_buffer()
+                                                base_reply(std::make_shared<atom::redis_reply<BufferType>>(reply))
                                                 {};
     arrow_entry(std::string field) : field(field){};
 
@@ -259,23 +259,46 @@ struct arrow_entry {
 template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 class entry {
 public:
-    boost::variant<msgpack_entry<BufferType, MsgPackType>,raw_entry<BufferType>,arrow_entry<BufferType>> data;
+    boost::variant<msgpack_entry<BufferType, MsgPackType>,raw_entry<BufferType>, arrow_entry<BufferType>> base_entry;
 
-    entry(msgpack_entry<BufferType, MsgPackType> data) : data(data){};
-    entry(raw_entry<BufferType> data) : data(data){};
-    entry(arrow_entry<BufferType> data) : data(data){};
+    entry(msgpack_entry<BufferType, MsgPackType> base_entry) : base_entry(base_entry){};
+    entry(raw_entry<BufferType> base_entry) : base_entry(base_entry){};
+    entry(arrow_entry<BufferType> base_entry) : base_entry(base_entry){};
+
 
     msgpack_entry<BufferType, MsgPackType> get_msgpack(){
-        return boost::get<msgpack_entry<BufferType, MsgPackType>>(data);
+        return boost::get<msgpack_entry<BufferType, MsgPackType>>(base_entry);
     }
     
     raw_entry<BufferType> get_raw(){
-        return boost::get<raw_entry<BufferType>>(data);
+        return boost::get<raw_entry<BufferType>>(base_entry);
     }
 
     arrow_entry<BufferType> get_arrow(){
-        return boost::get<arrow_entry<BufferType>>(data); //TODO implement and test
+        return boost::get<arrow_entry<BufferType>>(base_entry); //TODO implement and test
     }
+
+    bool is_empty(){
+        return base_entry.empty();
+    }
+
+};
+
+template<typename BufferType>
+class serialized_entry {
+public:
+    std::string field;
+    std::vector<std::string> data;
+    std::shared_ptr<atom::redis_reply<BufferType>> base_reply;
+    
+    serialized_entry(){};
+    serialized_entry(std::string field, 
+        std::vector<std::string>& data,
+        atom::redis_reply<BufferType> reply) : field(field),
+                                                data(data),
+                                                base_reply(std::make_shared<atom::redis_reply<BufferType>>(reply))
+                                                {};
+    serialized_entry(std::string field, std::vector<std::string>& data) : field(field), data(data){};
 
 };
 
@@ -283,11 +306,11 @@ public:
 template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 class command {
 public:
-    command(std::string element_name, std::string command_name, std::shared_ptr<atom::entry<BufferType, MsgPackType>> data) :
+    command(std::string element_name, std::string command_name, atom::serialized_entry<BufferType> data) :
                                         element_name(element_name), command_name(command_name), entry_data(entry_data){};
     std::string element_name;
     std::string command_name;
-    std::shared_ptr<atom::entry<BufferType, MsgPackType>> entry_data;
+    atom::serialized_entry<BufferType> entry_data;
 };
 
 ///Holds a response from a Server_Element. 
@@ -296,14 +319,23 @@ public:
 ///@param err holds error code and msg information, if any errors occur.
 template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 struct element_response {
-    std::shared_ptr<atom::entry<BufferType, MsgPackType>> data;
+    std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> data;
     std::string serialization_method;
     atom::error err;
+    bool filled = false;
 
-    element_response(std::shared_ptr<atom::entry<BufferType, MsgPackType> > data, 
-                    std::string method, atom::error err) : data(data),
+    element_response(atom::error err): err(err){};
+
+    element_response(std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> data, 
+                    std::string method, atom::error & err) : data(data),
                                                         serialization_method(method),
-                                                        err(err){};
+                                                        err(err), filled(true){};
+    void fill(std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> data, std::string method, atom::error & err){
+        data = data;
+        serialization_method = method;
+        err = err;
+        filled = true;
+    }
 };
 
 

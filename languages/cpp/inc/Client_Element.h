@@ -177,32 +177,45 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
 ///@param timeout Optional argument, how long to wait for an acknowledgement before timing out
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@tparam DataType can be std::vector<msgpack::type::variant> or std::vector<std::string> for no serialization or msgpack serialization, and in the future arrow for arrow serialization
-template<typename DataType, typename MsgPackType = msgpack::type::variant>
-atom::element_response<DataType, MsgPackType> send_command(std::string element_name, std::string command_name, 
-                                DataType data, atom::error err, bool block=true,
+template<typename MsgPackType = msgpack::type::variant>
+atom::element_response<BufferType, MsgPackType> send_command(std::string element_name, std::string command_name, 
+                                atom::entry<BufferType, MsgPackType> unser_entry, atom::error err, bool block=true,
                                 std::chrono::milliseconds ack_timeout=std::chrono::milliseconds(atom::params::ACK_TIMEOUT),
                                 atom::Serialization::method serialization=atom::Serialization::method::msgpack){
     std::string local_last_id = last_response_id;
     std::string timeout = ""; //to be updated with timeout info in response
+    atom::element_response<BufferType, MsgPackType> final_response(err);
 
-    //serialize data
-    std::vector<std::string> serialized_data = ser.serialize(data, serialization, err);
+    //check if empty
+    if(unser_entry.is_empty()){
+        logger.info("Supplied entry is empty.");
+        return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
+    }
+
+    //serialize entry
+    atom::serialized_entry<BufferType> serialized_entry = ser.serialize(unser_entry, serialization, err); //todo add to the serialize class to call correct get on this
+
 
     //create a command
-    atom::command<BufferType, MsgPackType> cmd(element_name, command_name, std::make_shared<atom::entry<BufferType, MsgPackType>>(data));
+    atom::serialized_entry<BufferType> entry_ser = atom::serialized_entry<BufferType>(serialized_entry);
+    atom::command<BufferType, MsgPackType> cmd(element_name, command_name, entry_ser);
     
     //get connection from pool
-    ConnectionType a_con = pool.get_connection<ConnectionType>();
-    a_con.connect(err);
+    std::shared_ptr<ConnectionType> a_con = pool.get_connection<ConnectionType>();
+    a_con->connect(err);
     if(err){
         logger.critical("Unable to connect to Redis.");
         throw std::runtime_error("Unable to connect to Redis.");
     }
 
     //send serialized data and grab command id
-    atom::redis_reply<BufferType> reply = a_con.xadd(make_command_id(element_name), serialized_data, err, atom::params::STREAM_LEN);
-    std::string command_id = atom::reply_type::to_string(reply.flat_response());
-    a_con.release_rx_buffer(reply);
+    int len = atom::params::STREAM_LEN;
+    std::string ser_type = ser.method_strings.at(serialization);
+    std::string cmdID = make_command_id(element_name);
+    atom::redis_reply<BufferType> reply = a_con->xadd(cmdID, ser_type, serialized_entry.data, err, len);
+    auto flat = reply.flat_response();
+    std::string command_id = atom::reply_type::to_string(flat);
+    a_con->release_rx_buffer(reply);
 
     //attempt to receive ACK from a server element until ack_timeout is reached
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -210,17 +223,18 @@ atom::element_response<DataType, MsgPackType> send_command(std::string element_n
     int longest_reserved_key = std::max_element(atom::reserved_keys.at("response_keys").begin(), 
                                                 atom::reserved_keys.at("response_keys").end(), atom::longest())->size();
     while(elapsed_time < ack_timeout){
-        elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
+        elapsed_time =  std::chrono::high_resolution_clock::now() - start;
         std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
-        std::string block_time = std::to_string(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(ack_timeout - elapsed_time), std::chrono::milliseconds(1)).count());
-        atom::redis_reply<BufferType> responses = a_con.xread(streams_timestamps, err, block_time); //TODO: do we want to use a_con? or the class member con?
+        int block_time = std::max(std::chrono::duration_cast<std::chrono::milliseconds>(ack_timeout - elapsed_time), std::chrono::milliseconds(1)).count();
+        atom::redis_reply<BufferType> responses = a_con->xread(streams_timestamps, err, block_time); //TODO: do we want to use a_con? or the class member con?
         auto response_list = responses.entry_response_list();
         if(response_list.empty()){
-            elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
+            elapsed_time = std::chrono::high_resolution_clock::now() - start;
             if(elapsed_time >= ack_timeout){
+                pool.release_connection(a_con);
                 err.set_error_code(atom::error_codes::no_response);
                 logger.error("Did not receive acknowledgement from " + element_name);
-                return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
+                return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
             }
         }else{
             continue;
@@ -256,29 +270,31 @@ atom::element_response<DataType, MsgPackType> send_command(std::string element_n
 
     //if timeout is empty, then we didn't receive timeout information from the desired element and command id
     if(timeout.empty()){
+        pool.release_connection(a_con);
         err.set_error_code(atom::error_codes::no_response);
         logger.error("Did not receive acknowledgement from " + element_name);
-        return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
+        return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
     }
 
     std::chrono::high_resolution_clock::duration response_timeout(std::stoi(timeout));
     start = std::chrono::high_resolution_clock::now();
-    elapsed_time = 0;
+    elapsed_time = std::chrono::milliseconds(0);
     while(elapsed_time < response_timeout){
-        elapsed_time = (start - std::chrono::high_resolution_clock::now()).count();
+        elapsed_time = std::chrono::high_resolution_clock::now() - start;
         std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
-        std::string block_time = std::to_string(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(response_timeout - elapsed_time), std::chrono::milliseconds(1)).count());
-        atom::redis_reply<BufferType> responses = a_con.xread(streams_timestamps, err, block_time); //TODO: again, do we want to use a_con? or the class member con?
+        int block_time = std::max(std::chrono::duration_cast<std::chrono::milliseconds>(response_timeout - elapsed_time), std::chrono::milliseconds(1)).count();
+        atom::redis_reply<BufferType> responses = a_con->xread(streams_timestamps, err, block_time); //TODO: again, do we want to use a_con? or the class member con?
         auto response_list = responses.entry_response_list();
         
         if(response_list.empty()){
+            pool.release_connection(a_con);
             err.set_error_code(atom::error_codes::no_response);
             logger.error("Did not receive acknowledgement from " + element_name);
-            return atom::element_response<DataType, MsgPackType>(nullptr, serialization, err);
+            return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
         }
 
         std::string stream_name = response_list.begin()->first;
-        atom::reply_type::entry_response entries = response_list.begin()->end();
+        atom::reply_type::entry_response entries = response_list.begin()->second;
         for(auto & entry : entries){
             std::string id = entry.first;
             
@@ -310,15 +326,30 @@ atom::element_response<DataType, MsgPackType> send_command(std::string element_n
                     logger.error(err_str);
                 }
                 if(ser_found){
-                    //serialization = atom::Serialization::method_strings
+                    serialization = ser.get_method(ser_method);
                 }
+                
+                std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> entries;
+                ser.deserialize(*entries, serialization, entry, err);
+
+                final_response.fill(entries, ser.method_strings.at(serialization), err);
+                break;
+
             }
         }
-
-
-
+        update_response_id(local_last_id);
+        if(final_response.filled){
+            pool.release_connection(a_con);
+            return final_response;
+        }
 
     }
+
+    //if we reach here, then the response we wanted was not inside of what was received from the server element
+    pool.release_connection(a_con);
+    err.set_error_code(atom::error_codes::no_response);
+    logger.error("Did not receive acknowledgement from " + element_name);
+    return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
 
 }
 

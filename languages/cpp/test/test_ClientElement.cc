@@ -248,3 +248,14 @@ TEST_F(ClientElementTest, entry_read_loop){
     EXPECT_THAT(callback_counter, 3);
     callback_counter = 0;
 }
+
+TEST_F(ClientElementTest, command_send){
+
+    atom::error err;
+    std::cout<<"Entry_read_n"<<std::endl;
+    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, atom::Serialization::method::msgpack, false);
+
+    std::cout<<"Element_Response"<<std::endl;
+    atom::element_response<boost::asio::streambuf, msgpack::type::variant> response = client_elem.send_command("MyElem", "my_command", entries[0], err);
+
+}

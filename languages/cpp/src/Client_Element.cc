@@ -43,7 +43,15 @@ std::string atom::Client_Element<ConnectionType, BufferType>::make_stream_id(std
     return stream_name;
 }
 
+template<typename ConnectionType, typename BufferType>
+std::string atom::Client_Element<ConnectionType, BufferType>::make_command_id(std::string element_name){
+    return "command:" + element_name;
+}
 
+template<typename ConnectionType, typename BufferType>
+std::string atom::Client_Element<ConnectionType, BufferType>::make_response_id(std::string element_name){
+    return "response:" + element_name;
+}
 
 template class atom::Client_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type>;
 

@@ -56,6 +56,89 @@ public:
 
     virtual ~Serialization(){}
 
+    template<typename BufferType, typename MsgPackType>
+    atom::serialized_entry<BufferType> serialize(atom::entry<BufferType, MsgPackType>& entry_in, atom::Serialization::method ser_method, atom::error& err){
+        std::string ID;
+        std::vector<std::string> ser_data;
+        switch(ser_method){
+            case atom::Serialization::method::msgpack:
+            {   
+                auto msgpack_type_entry = entry_in.get_msgpack();
+                ID = msgpack_type_entry.field;
+                ser_data = serialize_object(msgpack_type_entry.data, ser_method, err);
+                break;
+            }
+            case atom::Serialization::method::none:
+            {   
+                auto raw_type_entry = entry_in.get_raw();
+                ID = raw_type_entry.field;
+                ser_data = serialize_object(raw_type_entry.data, ser_method, err);
+                break;
+            }
+            case atom::Serialization::method::arrow:
+            {   
+                logger.alert("Arrow serialization not supported!");
+                err.set_error_code(atom::error_codes::unsupported_command);
+                return atom::serialized_entry<BufferType>();
+            }
+        }
+        return atom::serialized_entry<BufferType>(ID, ser_data);
+
+    }
+
+
+    template<typename DataType>
+    std::vector<std::string> serialize_object(std::vector<atom::entry_type::object<DataType> >& entry_data, atom::Serialization::method ser_method, atom::error& err){
+        //serialize
+        switch(ser_method){
+            case atom::Serialization::method::msgpack:
+            {
+                //serialize the values (leave the keys alone)
+                std::vector<std::string> processed_data;
+                bool is_value = false;
+                for(auto m: entry_data){
+                    if(is_value){
+                        std::stringstream serialized_data;
+                        serialize_msgpack(*boost::get<atom::entry_type::deser_data<DataType>>(m.pair.first).get(), serialized_data);
+                        processed_data.push_back(serialized_data.str());
+                        logger.debug("serialized object, msgpack value: " + serialized_data.str());
+
+                    } else{
+                        std::string key = *boost::get<atom::entry_type::str_data>(m.pair.first).get();
+                        processed_data.push_back(key);
+                        logger.debug("serialized object, msgpack key: " + key);
+                    }
+                    is_value = !is_value;
+                }
+
+                return processed_data;
+            }
+            case atom::Serialization::method::none:
+            {   
+                std::vector<std::string> processed_data;
+                try {
+                std::for_each(entry_data.cbegin(), entry_data.cend(), [&](const atom::entry_type::object<DataType> & elem) {
+                                processed_data.push_back(*boost::get<atom::entry_type::str_data>(elem.pair.first).get()); });
+                } catch(boost::bad_get & e) {
+                    logger.alert("Must supply data composed only of strings when Serialization::none is selected");
+                    throw std::runtime_error("Must supply data composed only of strings when Serialization::none is selected");
+                }
+                return processed_data;
+            }
+            case atom::Serialization::method::arrow:
+            {          
+                logger.alert("Arrow serialization not supported!");
+                err.set_error_code(atom::error_codes::unsupported_command);
+                return std::vector<std::string>{"arrow unsupported"};
+            }
+            default:
+                throw std::runtime_error("Supplied serialization option is invalid.");
+        }
+
+    }
+
+
+
     template<typename DataType>
     std::vector<std::string> serialize(DataType& entry_data, atom::Serialization::method ser_method, atom::error& err){
         //serialize
@@ -69,9 +152,11 @@ public:
                     if(is_value){
                         std::stringstream serialized_data;
                         serialize_msgpack(m, serialized_data);
+                        logger.debug("serialized msgpack value: " + serialized_data.str());
                         processed_data.push_back(serialized_data.str());
                     } else{
                         std::string key = boost::get<std::string>(m);
+                        logger.debug("serialized msgpack key: " + key);
                         processed_data.push_back(key);
                     }
                     is_value = !is_value;
@@ -197,15 +282,8 @@ public:
                     counter++;
                     std::string method = std::string(*entry_data[counter].first.get(), entry_data[counter].second);
                     counter++;
-                    if(method == method_strings.at(atom::Serialization::method::none)){
-                        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::none, counter);
-                    }
-                    if(method == method_strings.at(atom::Serialization::method::msgpack)){
-                        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::msgpack, counter);
-                    }
-                    if(method == method_strings.at(atom::Serialization::method::arrow)){
-                        return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::arrow, counter);
-                    }
+                    atom::Serialization::method found_method = get_method(method);
+                    return std::tuple<atom::Serialization::method, int>(found_method, counter);
                     throw std::runtime_error(method + " serialization not supported.");
                 }
             }
@@ -214,6 +292,17 @@ public:
         return std::tuple<atom::Serialization::method, int>(atom::Serialization::method::not_found, 0);
     }
 
+    atom::Serialization::method get_method(std::string method){
+        if(method == method_strings.at(atom::Serialization::method::none)){
+            return atom::Serialization::method::none;
+        }
+        if(method == method_strings.at(atom::Serialization::method::msgpack)){
+            return atom::Serialization::method::msgpack;
+        }
+        if(method == method_strings.at(atom::Serialization::method::arrow)){
+            return atom::Serialization::method::arrow;
+        }
+    }
 
     //streamType should support write(const char*, size_t)
     template<typename MsgPackType, typename streamType> 

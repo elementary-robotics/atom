@@ -99,7 +99,8 @@ public:
                 for(auto m: entry_data){
                     if(is_value){
                         std::stringstream serialized_data;
-                        serialize_msgpack(*boost::get<atom::entry_type::deser_data<DataType>>(m.pair.first).get(), serialized_data);
+                        DataType deserialized_data = *boost::get<atom::entry_type::deser_data<DataType>>(m.pair.first).get();
+                        serialize_msgpack(deserialized_data, serialized_data);
                         processed_data.push_back(serialized_data.str());
                         logger.debug("serialized object, msgpack value: " + serialized_data.str());
 
@@ -206,7 +207,8 @@ public:
     template<typename BufferType, typename MsgPackType>
     void deserialize(std::vector<atom::entry<BufferType, MsgPackType>>& entries, atom::Serialization::method serialization, 
                         std::pair<std::string, std::vector<atom::reply_type::flat_response>> entry_map, atom::error & err){
-        
+            
+            bool was_not_serialized = false;
             std::string uid = entry_map.first;
 
             //find the serialization method
@@ -218,6 +220,7 @@ public:
             // if the serialization method is there ignore the serialization arg passed in
             if(ser_method == atom::Serialization::method::not_found){
                 ser_method = serialization;
+                was_not_serialized = true;
             }
             
             int position = std::get<1>(method);
@@ -231,7 +234,7 @@ public:
 
                     for(size_t i = position; i < entry_map.second.size(); i++){
                         if(is_val){  
-                            atom::entry_type::object<MsgPackType> deser = obj.deserialize(entry_map.second[i], ser_method, err);
+                            atom::entry_type::object<MsgPackType> deser = obj.deserialize(entry_map.second[i], ser_method, was_not_serialized, err);
                             single_entry.data.push_back(deser);
                         } else{
                             auto key = std::make_shared<std::string>(atom::reply_type::to_string(entry_map.second[i]));
@@ -320,12 +323,21 @@ public:
 
         atom::entry_type::object<MsgPackType> deserialize(atom::reply_type::flat_response resp, 
                                                         atom::Serialization::method ser_method,
+                                                        bool was_not_serialized,
                                                         atom::error & err){
             if(ser_method != atom::Serialization::method::msgpack){
                 throw std::runtime_error("Incompatible serialization method supplied!");
             }
+            
             std::string data_str(*resp.first.get(), resp.second);
 
+            //process into msgpack formatted str if data was not serialized as msgpack
+            if(was_not_serialized){
+                std::stringstream ss;
+                msgpack::pack(ss, data_str);
+                data_str = ss.str();
+            }
+            
             try{
                 MsgPackType deser_data = deserialize_msgpack(data_str);
                 return atom::entry_type::object<MsgPackType>(std::make_shared<MsgPackType>(deser_data), resp.second);
@@ -339,7 +351,8 @@ public:
         //deserialize msgpack & convert into original msgpack type       
         MsgPackType deserialize_msgpack(std::string& str){
             msgpack::object_handle obj_handle = msgpack::unpack(str.data(), str.size());
-            MsgPackType data = obj_handle.get().as<MsgPackType>();
+            msgpack::object obj = obj_handle.get();
+            MsgPackType data = obj.as<MsgPackType>();
             return data;
         }
         

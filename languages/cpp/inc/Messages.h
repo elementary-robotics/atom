@@ -306,11 +306,11 @@ public:
 template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 class command {
 public:
-    command(std::string element_name, std::string command_name, atom::serialized_entry<BufferType> data) :
-                                        element_name(element_name), command_name(command_name), entry_data(entry_data){};
+    command(std::string element_name, std::string command_name, std::shared_ptr<atom::serialized_entry<BufferType>> ser_entry) :
+                                        element_name(element_name), command_name(command_name), ser_entry(std::move(ser_entry)){};
     std::string element_name;
     std::string command_name;
-    atom::serialized_entry<BufferType> entry_data;
+    std::shared_ptr<atom::serialized_entry<BufferType>> ser_entry;
 };
 
 ///Holds a response from a Server_Element. 

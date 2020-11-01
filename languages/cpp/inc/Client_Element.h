@@ -193,12 +193,13 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
     }
 
     //serialize entry
-    atom::serialized_entry<BufferType> serialized_entry = ser.serialize(unser_entry, serialization, err); //todo add to the serialize class to call correct get on this
+    atom::serialized_entry<BufferType> ser_entry = ser.serialize(unser_entry, serialization, err); //todo add to the serialize class to call correct get on this
 
 
     //create a command
-    atom::serialized_entry<BufferType> entry_ser = atom::serialized_entry<BufferType>(serialized_entry);
-    atom::command<BufferType, MsgPackType> cmd(element_name, command_name, entry_ser);
+    //atom::serialized_entry<BufferType> entry_ser = atom::serialized_entry<BufferType>(ser_entry);
+    atom::command<BufferType, MsgPackType> cmd(element_name, command_name, 
+                            std::make_shared<atom::serialized_entry<BufferType>>(ser_entry));
     
     //get connection from pool
     std::shared_ptr<ConnectionType> a_con = pool.get_connection<ConnectionType>();
@@ -212,7 +213,7 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
     int len = atom::params::STREAM_LEN;
     std::string ser_type = ser.method_strings.at(serialization);
     std::string cmdID = make_command_id(element_name);
-    atom::redis_reply<BufferType> reply = a_con->xadd(cmdID, ser_type, serialized_entry.data, err, len);
+    atom::redis_reply<BufferType> reply = a_con->xadd(cmdID, ser_type, ser_entry.data, err, len);
     auto flat = reply.flat_response();
     std::string command_id = atom::reply_type::to_string(flat);
     a_con->release_rx_buffer(reply);

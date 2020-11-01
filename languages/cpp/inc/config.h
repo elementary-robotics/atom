@@ -24,8 +24,8 @@ enum params {
 };
 
 ///Version and Language information for atom (TODO what version is this?)
-#define LANGUAGE "c++11"
-#define VERSION "0"
+const std::string LANGUAGE = "c++11";
+const std::string VERSION = "0";
 
 //Serialization: enable msgpack to use boost. Necessary to pack and unpack variant types
 #define MSGPACK_USE_BOOST 1

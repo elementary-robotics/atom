@@ -24,7 +24,13 @@ atom::Client_Element<ConnectionType, BufferType>::Client_Element(boost::asio::io
     connection->connect(err);
     if(err){
         logger.error("Unable to connect to Redis: " + err.message());
+    } else{
+        std::vector<std::string> initial_data{"language", atom::LANGUAGE, "version", atom::VERSION};
+        atom::redis_reply<BufferType> reply = connection->xadd(make_response_id(element_name), "none", initial_data, err, atom::params::STREAM_LEN);
+        auto response = reply.flat_response();
+        last_response_id = atom::reply_type::to_string(response);
     }
+
 }
 
 template<typename ConnectionType, typename BufferType>

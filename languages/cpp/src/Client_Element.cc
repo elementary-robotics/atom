@@ -34,6 +34,20 @@ atom::Client_Element<ConnectionType, BufferType>::Client_Element(boost::asio::io
 }
 
 template<typename ConnectionType, typename BufferType>
+atom::redis_reply<BufferType> atom::Client_Element<ConnectionType, BufferType>::get_all_elements(atom::error & err){
+    std::string matcher = make_response_id("*");
+    auto reply = connection->keys(matcher, err);
+    return reply;
+}
+
+template<typename ConnectionType, typename BufferType>
+atom::redis_reply<BufferType> atom::Client_Element<ConnectionType, BufferType>::get_all_streams(std::string element_name, atom::error & err){
+    std::string matcher = make_stream_id(element_name, "*");
+    auto reply = connection->keys(matcher, err);
+    return reply;
+}
+
+template<typename ConnectionType, typename BufferType>
 atom::Client_Element<ConnectionType, BufferType>::~Client_Element(){
     //TODO cleanup the pool and close the connection
 };

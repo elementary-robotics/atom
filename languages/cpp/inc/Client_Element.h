@@ -27,7 +27,7 @@
 
 namespace atom{
 
-template<typename ConnectionType, typename BufferType>
+template<typename ConnectionType, typename BufferType = boost::asio::streambuf>
 class Client_Element {
 
 public:
@@ -185,19 +185,19 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
     std::string local_last_id = last_response_id;
     std::string timeout = ""; //to be updated with timeout info in response
     atom::element_response<BufferType, MsgPackType> final_response(err);
+    atom::serialized_entry<BufferType> ser_entry;
 
     //check if empty
     if(unser_entry.is_empty()){
         logger.info("Supplied entry is empty.");
-        return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
+        //return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
+    }else{
+        //serialize entry
+        ser_entry = ser.serialize(unser_entry, serialization, err);
     }
-
-    //serialize entry
-    atom::serialized_entry<BufferType> ser_entry = ser.serialize(unser_entry, serialization, err); //todo add to the serialize class to call correct get on this
 
 
     //create a command
-    //atom::serialized_entry<BufferType> entry_ser = atom::serialized_entry<BufferType>(ser_entry);
     atom::command<BufferType, MsgPackType> cmd(element_name, command_name, 
                             std::make_shared<atom::serialized_entry<BufferType>>(ser_entry));
     
@@ -371,11 +371,11 @@ std::string get_redis_timestamp(){
 
 ///Get names of all Elements connected to Redis
 ///@return vector of element names
-std::vector<std::string> get_all_elements();
+atom::redis_reply<BufferType> get_all_elements(atom::error & err);
 
 ///Get information about all streams belonging to an Element connected to Redis
 ///@return vector of element names
-std::vector<std::string> get_all_streams(std::string element_name);
+atom::redis_reply<BufferType> get_all_streams(std::string element_name, atom::error & err);
 
 ///Get information about all streams of all Elements connected to Redis
 ///@return maps element name to vector of stream names
@@ -383,11 +383,68 @@ std::map<std::string, std::vector<std::string>> get_all_streams();
 
 ///Get names of all commands belonging to an Element connected to Redis
 ///@return vector of command names
-std::vector<std::string> get_all_commands(std::string element_name);
+template<typename MsgPackType = msgpack::type::variant>
+atom::element_response<BufferType, MsgPackType> get_all_commands(std::string element_name, atom::error & err){
+    atom::entry<BufferType> unser_entry;
+    auto reply = send_command(element_name, atom::COMMAND_LIST_COMMAND, unser_entry, err);
+
+}
 
 ///Get names of all commands belonging to all Element connected to Redis
 ///@return maps element names to vector of command names
-std::map<std::string, std::vector<std::string>> get_all_commands();
+template<typename MsgPackType = msgpack::type::variant>
+std::vector<std::shared_ptr<atom::element_response<BufferType, MsgPackType>>> get_all_commands(atom::error & err){
+    atom::entry<BufferType> unser_entry;
+    atom::redis_reply<BufferType> elements_list = get_all_elements(err);
+    auto elements = elements_list.array_response();
+    std::vector<std::shared_ptr<atom::redis_reply<BufferType>>> results;
+    
+    if (elements.empty()){
+        logger.info("No elements online.");
+    }
+
+    //loop over all elements
+    for(auto & elem: elements){
+        std::string elem_name = atom::reply_type::to_string(elem);
+        if(check_element_version(elem_name, {"C++"}, "1", err)){
+            auto reply = send_command(elem_name, atom::COMMAND_LIST_COMMAND, unser_entry, err);
+            auto shared = std::make_shared<atom::element_response<BufferType, MsgPackType>>(reply);
+            results.push_back(shared);
+        } else{
+            logger.info("Element " + elem_name + " does not meet minimum language/version requirement.");
+        }
+    }
+
+    //TODO: Python client renames the commands, but we still need to do that here.
+
+    return results;
+}
+
+///Determine if an Element can meet minimum language and version requirements
+///@return true/false
+bool check_element_version(std::string element_name, 
+                        std::vector<std::string> supported_languages, 
+                        std::string supported_min_version, atom::error& err){
+    auto reply = get_element_version(element_name, err);
+    if(err){
+        return false;
+    }
+
+    //TODO: complete this function!
+    return true;
+
+}
+
+
+///Get version of to an Element connected to Redis
+///@return version info
+template<typename MsgPackType = msgpack::type::variant>
+atom::element_response<BufferType, MsgPackType> get_element_version(std::string element_name, atom::error & err){
+    atom::entry<BufferType> unser_entry;
+    atom::element_response<BufferType, MsgPackType> response = send_command(element_name, atom::VERSION, unser_entry, err);
+    return response;
+}
+
 
 ///Get information about references
 ///@param keys one or more keys of references to get
@@ -397,7 +454,7 @@ std::map<std::string, std::shared_ptr<const char *>> get_reference(std::vector<s
 ///Get information about references - deserialized
 ///@param keys one or more keys of references to get
 ///@return maps reference key to corresponding msgpack type
-template<typename MsgPackType>
+template<typename MsgPackType = msgpack::type::variant>
 std::map<std::string, MsgPackType> get_deserialized_reference(std::vector<std::string> keys);
 
 ///create a reference from stream - return value maps stream key to reference key

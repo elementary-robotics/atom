@@ -104,6 +104,10 @@ class redis_reply {
         return boost::get<atom::reply_type::flat_response>(parsed_reply);
     }
 
+    atom::reply_type::array_response array_response(){
+        return boost::get<atom::reply_type::array_response>(parsed_reply);
+    }
+
     atom::reply_type::entry_response entry_response(){
         return boost::get<atom::reply_type::entry_response>(parsed_reply);
     }
@@ -261,6 +265,7 @@ class entry {
 public:
     boost::variant<msgpack_entry<BufferType, MsgPackType>,raw_entry<BufferType>, arrow_entry<BufferType>> base_entry;
 
+    entry() : base_entry(msgpack_entry<BufferType,MsgPackType>("empty")){};
     entry(msgpack_entry<BufferType, MsgPackType> base_entry) : base_entry(base_entry){};
     entry(raw_entry<BufferType> base_entry) : base_entry(base_entry){};
     entry(arrow_entry<BufferType> base_entry) : base_entry(base_entry){};
@@ -291,7 +296,7 @@ public:
     std::vector<std::string> data;
     std::shared_ptr<atom::redis_reply<BufferType>> base_reply;
     
-    serialized_entry(){};
+    serialized_entry(): field(""){data.push_back("");};
     serialized_entry(std::string field, 
         std::vector<std::string>& data,
         atom::redis_reply<BufferType> reply) : field(field),

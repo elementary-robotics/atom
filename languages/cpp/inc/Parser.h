@@ -31,24 +31,28 @@ namespace reply_type {
     ///The shared pointer points to buffer where the data begins, and size_t indicates the number of characters in the data.
     using flat_response = std::pair<std::shared_ptr<const char *>, size_t>;
 
+    ///array response: for KEYS
+    using array_response = std::vector<flat_response>;
+
     ///entry response: holds replies from XRANGE, XREVRANGE, etc. 
     ///map key is the Redis ID of the entry,
     ///vector of flat_responses hold pointers to Redis keys and values with associated data sizes
-    using entry_response = std::map<std::string, std::vector<flat_response>>;
+    using entry_response = std::map<std::string, array_response>;
 
     ///entry response list: holds replies from XREAD, XREADGROUP, etc.
     ///vector of entry maps, indexed by streams requested in outgoing command to Redis
-    using entry_response_list = std::map<std::string, entry_response>; //TODO: call this stream_response instead.
+    using entry_response_list = std::map<std::string, entry_response>; //TODO: call this stream_response instead?
 
     ///parsed reply: boost::variant of flat_response, entry_response, or entry_response_list
     ///used as return type by Parser::process
-    using parsed_reply = boost::variant<flat_response, entry_response, entry_response_list>;
+    using parsed_reply = boost::variant<flat_response, array_response, entry_response, entry_response_list>;
 
     ///Parsing options
     enum options {
         flat_pair = 0, ///< flat pair
-        entry_map = 1, ///< map of entries
-        entry_maplist = 2 ///< vector of entry maps
+        array = 1, ///< array of flat pairs
+        entry_map = 2, ///< map of entries
+        entry_maplist = 3 ///< vector of entry maps
     };
 
     inline std::string to_string(flat_response & raw){
@@ -100,6 +104,12 @@ public:
               flat_dbg(resp);
               return resp;
           }
+          case atom::reply_type::options::array: 
+          {
+              auto resp =  process_array(begin, end, err);
+              array_dbg(resp);
+              return resp;
+          }
           case atom::reply_type::options::entry_map: 
           {
               auto resp = process_entry(begin, end, err);
@@ -148,8 +158,16 @@ public:
         logger.debug("............end................");
     }
 
+    ///Debug helper: logs contents of array
+    ///@param array object to debug
+    void array_dbg(atom::reply_type::array_response& array){
+        for(auto & pair : array){
+            flat_dbg(pair);    
+        }
+    }
+
     ///Debug helper: logs contents of flat pairs
-    ///@param pointers_map object to debug
+    ///@param pair object to debug
     void flat_dbg(atom::reply_type::flat_response& pair){
         logger.debug("DATA: "+ atom::reply_type::to_string(pair) +", SIZE: "+std::to_string(pair.second));
     }
@@ -193,6 +211,74 @@ private:
         }
         return response;
     } 
+
+    //parser for arrays - each array element represented as a flat pair
+    atom::reply_type::array_response
+        process_array(buf_iter & data, buf_iter & end, atom::error & err){
+            logger.debug("process_array()");
+            atom::reply_type::array_response flat_array;
+
+            //find number of elements
+            assert(*data == '*');
+            data++; //move past the * indicator char
+            std::tuple<size_t,size_t> sizes = find_data_len(data, end); // <num_bytes, num entries in response>
+            size_t num_bytes = std::get<0>(sizes);
+            size_t num_elems = std::get<1>(sizes);
+            data+=num_bytes; //move past the chars that indicate # of array elements
+            logger.debug("process_array| found array elements: " + std::to_string(num_elems));
+
+            
+            bool entry_read = false;
+            size_t counter=0;
+            for(auto it = data; it != end; ++it){
+                switch(*it) {
+                case '+':  // simple string
+                case '-':  // nill or error
+                case ':': { // integer
+                    logger.debug("process_entry| simple strings or integer");
+                    it++; //move past indicator char
+                    size_t str_len = find_data(it, end);
+                    logger.debug("process_entry| str_len: " + std::to_string(str_len));
+                    std::shared_ptr<const char *> str = std::make_shared<const char *>(&*(it));
+                    flat_array.push_back(std::pair<std::shared_ptr<const char *>,size_t>(str, str_len)); 
+                    counter+=1;
+                    if(counter==num_elems){entry_read=true;}
+                    logger.debug("process_entry| updating array data...");
+                    it += (str_len);
+                    break;
+                } //case +-:
+                case '$': {// bulk string - will carry on until /r/n is hit
+                    logger.debug("process_entry| bulk strings");
+                    it++; //move past the indicator char
+                    std::tuple<size_t,size_t> sizes = find_data_len(it, end); // <num_bytes, num characters in data string>
+                    size_t num_bytes = std::get<0>(sizes);
+                    size_t data_len = std::get<1>(sizes);
+                    logger.debug("process_entry| data_len: " + std::to_string(data_len));
+                    it+=num_bytes;
+                    std::shared_ptr<const char *> bulk_str = std::make_shared<const char *>(&*it);
+                    it+= (data_len); //move pointer past the data string
+                    logger.debug("process_entry| updating inner data...");
+                    flat_array.push_back(std::pair<std::shared_ptr<const char *>,size_t>(bulk_str, data_len));
+                    counter+=1;
+                    if(counter==num_elems){entry_read=true;}
+                    break;
+                } //case $
+                case '*': { //array
+                    it++; //move past the indicator char
+                    logger.debug("process_array| arrays");
+                    std::tuple<size_t,size_t> sizes = find_data_len(it, end);
+                    num_elems = std::get<1>(sizes); // num redis keys + values in entry
+                    logger.debug("process_array| num_elems: " + std::to_string(num_elems));
+                    break;
+                } //case *
+                } //end switch
+                if(entry_read) { logger.debug("process_array| done with array."); data = it; break; } //leave iteration loop if we've read an entry
+            } //for each it
+            
+            return flat_array;
+        }
+
+
 
     //parser for entries - each entry represented as a map with ID as map key, which map to 
     //points to buffer which hold redis keys and values mapped to their size

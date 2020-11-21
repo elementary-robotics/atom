@@ -300,6 +300,14 @@ class Redis {
             return read_reply(atom::reply_type::options::entry_map, err);
         }
         
+        // keys operation
+        atom::redis_reply<buffer> keys(std::string & match, atom::error & err){
+            bredis::single_command_t cmd = bredis::single_command_t{"KEYS", match};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
+            return read_reply(atom::reply_type::options::array, err);
+        }
+
         // helper function for tokenizing redis replies
         std::vector<std::string> tokenize(std::string s, std::string delimiter) {
             size_t pos_start = 0, pos_end, delim_len = delimiter.length();

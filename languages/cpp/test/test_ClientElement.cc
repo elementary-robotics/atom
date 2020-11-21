@@ -250,7 +250,7 @@ TEST_F(ClientElementTest, entry_read_loop){
 }
 
 TEST_F(ClientElementTest, command_send){
-
+    //TODO: flesh out the test case once server_element is filled out
     atom::error err;
     std::cout<<"Entry_read_n"<<std::endl;
     auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, atom::Serialization::method::msgpack, false);
@@ -258,4 +258,72 @@ TEST_F(ClientElementTest, command_send){
     std::cout<<"Element_Response"<<std::endl;
     atom::element_response<boost::asio::streambuf, msgpack::type::variant> response = client_elem.send_command("MyElem", "my_command", entries[0], err);
 
+}
+
+MATCHER(MatchesClientName, ""){
+    if(arg == "response:ONE"){
+        return true;
+    }
+    if(arg == "response:TWO"){
+        return true;
+    }
+    if(arg == "response:THREE"){
+        return true;
+    }
+    if(arg == "response:ClientElement"){
+        return true;
+    }
+
+    return false;
+}
+
+TEST_F(ClientElementTest, get_elements){
+    //make some elems
+    atom::Client_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type>
+    client_one(iocon, 100, 1000, ip, ser, 10, 1000, 5, 5, std::cout, "ONE");
+
+    atom::Client_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type>
+    client_two(iocon, 100, 1000, ip, ser, 10, 1000, 5, 5, std::cout, "TWO");
+
+    atom::Client_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type>
+    client_three(iocon, 100, 1000, ip, ser, 10, 1000, 5, 5, std::cout, "THREE");
+
+
+    atom::error err;
+    atom::redis_reply<boost::asio::streambuf> reply = client_elem.get_all_elements(err);
+
+    auto elems = reply.array_response();
+
+    //expect that ONE, TWO, THREE, and ClientElem to be returned in the array
+    for(auto & elem : elems){
+        EXPECT_THAT(atom::reply_type::to_string(elem), MatchesClientName());
+    }
+}
+
+MATCHER(MatchesStreamName, ""){
+    if(arg == "stream:test:new_stream_1"){
+        return true;
+    }
+    if(arg == "stream:test:new_stream_2"){
+        return true;
+    }
+
+    return false;
+}
+
+TEST_F(ClientElementTest, get_streams){
+    atom::error err;
+
+    redis.xadd("stream:test:new_stream_1", "field1", "data1", err);
+    redis.xadd("stream:test:new_stream_2", "field1", "data1", err);
+    
+    atom::redis_reply<boost::asio::streambuf> reply = client_elem.get_all_streams("test", err);
+
+    auto elems = reply.array_response();
+
+
+    //expect stream names to be returned in the array
+    for(auto & elem : elems){
+        EXPECT_THAT(atom::reply_type::to_string(elem), MatchesStreamName());
+    }
 }

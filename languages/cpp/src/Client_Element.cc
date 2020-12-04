@@ -29,6 +29,7 @@ atom::Client_Element<ConnectionType, BufferType>::Client_Element(boost::asio::io
         atom::redis_reply<BufferType> reply = connection->xadd(make_response_id(element_name), "none", initial_data, err, atom::params::STREAM_LEN);
         auto response = reply.flat_response();
         last_response_id = atom::reply_type::to_string(response);
+        connection->release_rx_buffer(reply);
     }
 
 }

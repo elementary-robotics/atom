@@ -172,6 +172,22 @@ class Redis {
             return read_reply(atom::reply_type::options::flat_pair, err);
         }
 
+        // xadd operation with vector argument and user specified ID
+        atom::redis_reply<buffer> xadd(std::string stream_name, std::string method, std::string id, std::vector<std::string>& entry_data, atom::error & err, int max_len = 0){
+            std::vector<std::string> command;
+            if(max_len > 0){
+                command = { "XADD", stream_name, "MAXLEN", "~", std::to_string(max_len), id, "ser", method};
+            }else{
+                command = {"XADD", stream_name, id, "ser", method};
+            }
+            command.insert(command.end(), entry_data.begin(), entry_data.end());
+            
+            bredis::single_command_t cmd = bredis::single_command_t{command.cbegin(), command.cend()};
+            bredis_con->write(cmd, err);
+            redis_debug(cmd.arguments);
+            return read_reply(atom::reply_type::options::flat_pair, err);
+        }
+
         // xadd operation with multiple key value pairs - {NOT TESTED}
         template<typename ... ArgTypes>
         atom::redis_reply<buffer> xadd(std::string stream_name, atom::error & err, ArgTypes ... args){
@@ -340,8 +356,8 @@ class Redis {
                 if(!err){
                     redis_check(result_markers, err);
                     if(!err){
-                        const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
-                        logger.debug("raw data: " + std::string(data));
+                        //const bytes_t * data = static_cast<const bytes_t *>(pooled_buffer->io_buff.data().data());
+                        //logger.debug("raw data: " + std::string(data));
                         if(process_resp){
                             atom::reply_type::parsed_reply parsed = parser.process(pooled_buffer->io_buff, parse_option, err);
                             return atom::redis_reply<buffer>(result_markers.consumed, 

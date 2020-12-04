@@ -260,6 +260,7 @@ struct arrow_entry {
 };
 
 ///Holds the different forms of entry_types that we could expect to see.
+//TODO CHANGE THE ORDER OF TEMPLATE PARAMS
 template<typename BufferType, typename MsgPackType = msgpack::type::variant>
 class entry {
 public:
@@ -307,15 +308,21 @@ public:
 
 };
 
-///Holds the different forms of entry_types that we could expect to see.
-template<typename BufferType, typename MsgPackType = msgpack::type::variant>
+///Holds serialized or deserialized data that accompanies a command.
+template<typename BufferType = boost::asio::streambuf>
 class command {
 public:
-    command(std::string element_name, std::string command_name, std::shared_ptr<atom::serialized_entry<BufferType>> ser_entry) :
-                                        element_name(element_name), command_name(command_name), ser_entry(std::move(ser_entry)){};
+    command(std::string element_name, std::string command_name, std::vector<std::string> ser_data) :
+                                        element_name(element_name), command_name(command_name), ser_data(ser_data){};
     std::string element_name;
     std::string command_name;
-    std::shared_ptr<atom::serialized_entry<BufferType>> ser_entry;
+    std::vector<std::string> ser_data;
+
+    std::vector<std::string> data(){
+        std::vector<std::string> cmd_vector = std::vector<std::string>{element_name, command_name};
+        cmd_vector.insert(cmd_vector.end(), ser_data.begin(), ser_data.end());
+        return cmd_vector;
+    }
 };
 
 ///Holds a response from a Server_Element. 
@@ -335,8 +342,16 @@ struct element_response {
                     std::string method, atom::error & err) : data(data),
                                                         serialization_method(method),
                                                         err(err), filled(true){};
-    void fill(std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> data, std::string method, atom::error & err){
-        data = data;
+
+    void fill(std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> entry_data, std::string method, atom::error & err){
+        data = entry_data;
+        serialization_method = method;
+        err = err;
+        filled = true;
+    }
+
+    void fill(std::vector<atom::entry<BufferType, MsgPackType>> entry_data, std::string method, atom::error & err){
+        data = std::make_shared<std::vector<atom::entry<BufferType, MsgPackType>>>(entry_data);
         serialization_method = method;
         err = err;
         filled = true;

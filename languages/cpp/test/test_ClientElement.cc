@@ -252,11 +252,40 @@ TEST_F(ClientElementTest, entry_read_loop){
 TEST_F(ClientElementTest, command_send){
     //TODO: flesh out the test case once server_element is filled out
     atom::error err;
-    std::cout<<"Entry_read_n"<<std::endl;
-    auto entries = client_elem.entry_read_n<msgpack::type::variant>("MyElem", "client_stream", 1, err, atom::Serialization::method::msgpack, false);
 
-    std::cout<<"Element_Response"<<std::endl;
-    atom::element_response<boost::asio::streambuf, msgpack::type::variant> response = client_elem.send_command("MyElem", "my_command", entries[0], err);
+    /*
+    Tested Manually with these steps:
+    1) Run the test case with debug turned on
+    2) Copy the command_id from the debug printout
+    3) Run in redis-cli: XADD response:MyElem * element MyElem timeout 15000 cmd_id <command_id>
+       - this will get processed in the first while loop of command_send(...)
+    4) Run in redis-cli: XADD  response:MyElem * element MyElem err_code 0 err_str none ser none data MYDATA cmd_id <command_id>
+       - this will get processed in the second while loop of comnand_send(...)
+    */
+
+    //write as server element would
+/*     std::string stream_name = "stream:MyElem:client_stream";
+
+    atom::StreamHandler<> handler1("MyElem", "client_stream", &my_handler);
+
+    std::string current_time = client_elem.get_redis_timestamp();
+    std::string id = current_time;
+    id = std::to_string(std::stol(id) + 2);
+    const char * data = "data_n"; */
+    
+    /* atom::redis_reply<atom::ConnectionPool::Buffer_Type> reply = redis.xadd(stream_name, id, "key_n", data, err);
+ */
+
+    
+    std::vector<std::string> data{"for", "testing", "purposes", "here"};
+    
+
+   
+    //send the command
+    atom::element_response<boost::asio::streambuf, msgpack::type::variant> 
+    response = client_elem.send_command("MyElem", "my_command", data, err, true, 
+                                                std::chrono::milliseconds(10000),
+                                                atom::Serialization::method::msgpack);
 
 }
 

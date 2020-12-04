@@ -116,6 +116,7 @@ std::shared_ptr<atom::pooled_buffer<buffer>> get_buffer(){
 ///After releasing a buffer, that buffer is not guaranteed to be available for use, and the user must call get_buffer() to get a buffer to work with.
 ///@param buf a shared pointer to the pooled buffer to decrement
 void release_buffer(std::shared_ptr<atom::pooled_buffer<buffer>> buf, size_t size){
+    logger.debug("RELEASE buffer. count available: " + std::to_string(num_available));
     std::unique_lock<std::mutex> lock(mutex);
     buf->consume(size);
     buf->remove_ref();
@@ -144,7 +145,7 @@ bool check_available(){
     logger.debug("check_available()");
     for(auto & b : buffers){
         if(b->get_refs() == 0){
-            logger.debug("buffer available");
+            logger.debug("BUFFER AVAILABLE. remaining: " + std::to_string(num_available));
             return true;
         }
     }

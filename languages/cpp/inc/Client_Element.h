@@ -164,6 +164,8 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
                 vec_ind++;
             }
         }
+
+        connection->release_rx_buffer(data);
     }
 
 
@@ -177,30 +179,29 @@ void entry_read_loop(std::vector<atom::StreamHandler<BufferType, MsgPackType>>& 
 ///@param timeout Optional argument, how long to wait for an acknowledgement before timing out
 ///@param serialization Optional argument, used for applying deserialziation method to entries
 ///@tparam DataType can be std::vector<msgpack::type::variant> or std::vector<std::string> for no serialization or msgpack serialization, and in the future arrow for arrow serialization
-template<typename MsgPackType = msgpack::type::variant>
+template<typename InDataType, typename MsgPackType = msgpack::type::variant>
 atom::element_response<BufferType, MsgPackType> send_command(std::string element_name, std::string command_name, 
-                                atom::entry<BufferType, MsgPackType> unser_entry, atom::error err, bool block=true,
+                                std::vector<InDataType> unser_data, atom::error err, bool block=true,
                                 std::chrono::milliseconds ack_timeout=std::chrono::milliseconds(atom::params::ACK_TIMEOUT),
                                 atom::Serialization::method serialization=atom::Serialization::method::msgpack){
     std::string local_last_id = last_response_id;
     std::string timeout = ""; //to be updated with timeout info in response
     atom::element_response<BufferType, MsgPackType> final_response(err);
-    atom::serialized_entry<BufferType> ser_entry;
+    std::vector<std::string> ser_data;
 
     //check if empty
-    if(unser_entry.is_empty()){
+    if(unser_data.empty()){
         logger.info("Supplied entry is empty.");
         //return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
     }else{
-        //serialize entry
-        ser_entry = ser.serialize(unser_entry, serialization, err);
+        //serialize data
+        ser_data = ser.serialize(unser_data, serialization, err);
     }
 
 
     //create a command
-    atom::command<BufferType, MsgPackType> cmd(element_name, command_name, 
-                            std::make_shared<atom::serialized_entry<BufferType>>(ser_entry));
-    
+    atom::command<BufferType> cmd(element_name, command_name, ser_data);
+    std::vector<std::string> cmd_data = cmd.data();
     //get connection from pool
     std::shared_ptr<ConnectionType> a_con = pool.get_connection<ConnectionType>();
     a_con->connect(err);
@@ -213,17 +214,20 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
     int len = atom::params::STREAM_LEN;
     std::string ser_type = ser.method_strings.at(serialization);
     std::string cmdID = make_command_id(element_name);
-    atom::redis_reply<BufferType> reply = a_con->xadd(cmdID, ser_type, ser_entry.data, err, len);
+    atom::redis_reply<BufferType> reply = a_con->xadd(cmdID, ser_type, cmd_data, err, len);
     auto flat = reply.flat_response();
     std::string command_id = atom::reply_type::to_string(flat);
     a_con->release_rx_buffer(reply);
+
+    logger.debug("Looking for cmd_id= " + command_id);
 
     //attempt to receive ACK from a server element until ack_timeout is reached
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::duration elapsed_time(0);
     int longest_reserved_key = std::max_element(atom::reserved_keys.at("response_keys").begin(), 
                                                 atom::reserved_keys.at("response_keys").end(), atom::longest())->size();
-    while(elapsed_time < ack_timeout){
+    bool response_read = false;
+    while(elapsed_time < ack_timeout && !response_read){
         elapsed_time =  std::chrono::high_resolution_clock::now() - start;
         std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
         int block_time = std::max(std::chrono::duration_cast<std::chrono::milliseconds>(ack_timeout - elapsed_time), std::chrono::milliseconds(1)).count();
@@ -237,8 +241,6 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
                 logger.error("Did not receive acknowledgement from " + element_name);
                 return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
             }
-        }else{
-            continue;
         }
 
         std::string stream = response_list.begin()->first;
@@ -251,23 +253,30 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
             for(int i = 0; i < entry.second.size() - 1; i+=2){
                 if(entry.second[i].second <= longest_reserved_key){
                     if(atom::reply_type::to_string(entry.second[i]) == "element" && atom::reply_type::to_string(entry.second[i+1]) == element_name){
+                        logger.debug("Found 'element' in response.");
                         conditions[0] = true;
                     }
                     else if(atom::reply_type::to_string(entry.second[i]) == "cmd_id" && atom::reply_type::to_string(entry.second[i+1]) == command_id){
+                        logger.debug("Found 'cmd_id' in response.");
                         conditions[1] = true;
                     }
                     else if(atom::reply_type::to_string(entry.second[i]) == "timeout" ){
                         conditions[2] = true;
+                        logger.debug("Found 'timeout' in response.");
                         new_ack_timeout = atom::reply_type::to_string(entry.second[i+1]);
                     }
                 }
             }
             if(std::all_of(conditions.begin(), conditions.end(), [](bool c){return c;})){
+                logger.debug("Updating timeout due to response.");
                 timeout = new_ack_timeout;
+                response_read = true;
             }
             update_response_id(local_last_id);
         }
+        a_con->release_rx_buffer(responses);
     }
+
 
     //if timeout is empty, then we didn't receive timeout information from the desired element and command id
     if(timeout.empty()){
@@ -277,13 +286,13 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
         return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
     }
 
-    std::chrono::high_resolution_clock::duration response_timeout(std::stoi(timeout));
     start = std::chrono::high_resolution_clock::now();
+    std::chrono::milliseconds response_timeout(std::stoi(timeout));
     elapsed_time = std::chrono::milliseconds(0);
     while(elapsed_time < response_timeout){
         elapsed_time = std::chrono::high_resolution_clock::now() - start;
         std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
-        int block_time = std::max(std::chrono::duration_cast<std::chrono::milliseconds>(response_timeout - elapsed_time), std::chrono::milliseconds(1)).count();
+        int block_time = std::max(response_timeout, std::chrono::milliseconds(1)).count();
         atom::redis_reply<BufferType> responses = a_con->xread(streams_timestamps, err, block_time); //TODO: again, do we want to use a_con? or the class member con?
         auto response_list = responses.entry_response_list();
         
@@ -330,9 +339,8 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
                     serialization = ser.get_method(ser_method);
                 }
                 
-                std::shared_ptr<std::vector<atom::entry<BufferType, MsgPackType>>> entries;
-                ser.deserialize(*entries, serialization, entry, err);
-
+                std::vector<atom::entry<BufferType, MsgPackType>> entries;
+                ser.deserialize(entries, serialization, entry, err);
                 final_response.fill(entries, ser.method_strings.at(serialization), err);
                 break;
 
@@ -383,10 +391,10 @@ std::map<std::string, std::vector<std::string>> get_all_streams();
 
 ///Get names of all commands belonging to an Element connected to Redis
 ///@return vector of command names
-template<typename MsgPackType = msgpack::type::variant>
+template<typename MsgPackType /* = msgpack::type::variant */>
 atom::element_response<BufferType, MsgPackType> get_all_commands(std::string element_name, atom::error & err){
-    atom::entry<BufferType> unser_entry;
-    auto reply = send_command(element_name, atom::COMMAND_LIST_COMMAND, unser_entry, err);
+    std::vector<std::string> empty_data;
+    auto reply = send_command(element_name, atom::COMMAND_LIST_COMMAND, empty_data, err);
 
 }
 
@@ -394,7 +402,7 @@ atom::element_response<BufferType, MsgPackType> get_all_commands(std::string ele
 ///@return maps element names to vector of command names
 template<typename MsgPackType = msgpack::type::variant>
 std::vector<std::shared_ptr<atom::element_response<BufferType, MsgPackType>>> get_all_commands(atom::error & err){
-    atom::entry<BufferType> unser_entry;
+    std::vector<std::string> empty_data;
     atom::redis_reply<BufferType> elements_list = get_all_elements(err);
     auto elements = elements_list.array_response();
     std::vector<std::shared_ptr<atom::redis_reply<BufferType>>> results;
@@ -407,7 +415,7 @@ std::vector<std::shared_ptr<atom::element_response<BufferType, MsgPackType>>> ge
     for(auto & elem: elements){
         std::string elem_name = atom::reply_type::to_string(elem);
         if(check_element_version(elem_name, {"C++"}, "1", err)){
-            auto reply = send_command(elem_name, atom::COMMAND_LIST_COMMAND, unser_entry, err);
+            auto reply = send_command(elem_name, atom::COMMAND_LIST_COMMAND, empty_data, err);
             auto shared = std::make_shared<atom::element_response<BufferType, MsgPackType>>(reply);
             results.push_back(shared);
         } else{
@@ -440,8 +448,8 @@ bool check_element_version(std::string element_name,
 ///@return version info
 template<typename MsgPackType = msgpack::type::variant>
 atom::element_response<BufferType, MsgPackType> get_element_version(std::string element_name, atom::error & err){
-    atom::entry<BufferType> unser_entry;
-    atom::element_response<BufferType, MsgPackType> response = send_command(element_name, atom::VERSION, unser_entry, err);
+    std::vector<std::string> empty_data;
+    atom::element_response<BufferType, MsgPackType> response = send_command(element_name, atom::VERSION, empty_data, err);
     return response;
 }
 

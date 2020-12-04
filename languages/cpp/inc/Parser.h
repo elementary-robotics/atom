@@ -392,7 +392,6 @@ private:
             bool stream_read = false;
 
             for(auto it = start; it != end; it++){
-                logger.debug("process array| it: ");
                 switch(*it) {
                 case '*': {
                 logger.debug("process array| array");

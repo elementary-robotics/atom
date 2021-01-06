@@ -49,6 +49,13 @@ atom::redis_reply<BufferType> atom::Client_Element<ConnectionType, BufferType>::
 }
 
 template<typename ConnectionType, typename BufferType>
+atom::redis_reply<BufferType> atom::Client_Element<ConnectionType, BufferType>::get_all_streams(atom::error & err){   
+    std::string matcher = "stream:*";
+    auto reply = connection->keys(matcher, err);
+    return reply;
+}
+
+template<typename ConnectionType, typename BufferType>
 atom::Client_Element<ConnectionType, BufferType>::~Client_Element(){
     //TODO cleanup the pool and close the connection
 };

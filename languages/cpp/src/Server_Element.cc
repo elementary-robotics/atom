@@ -3,7 +3,6 @@
 #include <iostream>
 #include <msgpack.hpp>
 
-#include "Messages.h"
 
 template<typename ConnectionType, typename BufferType, typename MsgPackType>
 atom::Server_Element<ConnectionType, BufferType, MsgPackType>::Server_Element(boost::asio::io_context & iocon, int max_cons, int timeout, std::string redis_ip, 
@@ -16,19 +15,24 @@ atom::Server_Element<ConnectionType, BufferType, MsgPackType>::Server_Element(bo
                                                                         connection(nullptr),
                                                                         ser(std::move(serialization)),
                                                                         logger(&log_stream, element_name)
-    {
-        //initialize the connection pool
-        pool.init(num_unix, num_tcp);
-        connection = pool.get_connection<ConnectionType>();
+{
+    //initialize the connection pool
+    pool.init(num_unix, num_tcp);
+    connection = pool.get_connection<ConnectionType>();
 
-        //connect to Redis server
-        atom::error err;
-        connection->connect(err);
-        if(err){
-            logger.error("Unable to connect to Redis: " + err.message());
-        }
-
+    //connect to Redis server
+    atom::error err;
+    connection->connect(err);
+    if(err){
+        logger.error("Unable to connect to Redis: " + err.message());
     }
+
+    
+    add_command(atom::VERSION_COMMAND, [](){
+        return atom::element_response<BufferType, MsgPackType>({"language", atom::LANGUAGE, "version", atom::VERSION}, "msgpack");
+    });
+
+}
 
 
 //TODO

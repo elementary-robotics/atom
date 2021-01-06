@@ -13,12 +13,17 @@
 #include <iostream>
 #include <thread>
 #include <stdlib.h>
+#include <regex>
+
 
 #include "Client_Element.h"
 #include "Serialization.h"
+#include "ElementResponse.h"
 
 using my_type = msgpack::type::tuple<int, bool, std::string>;
 int callback_counter = 0;
+
+using ::testing::MatchesRegex;
 
 class ClientElementTest : public testing::Test {
 
@@ -81,14 +86,14 @@ TEST_F(ClientElementTest, entry_read_n_msgpack){
     EXPECT_THAT(entries[0].get_msgpack().data[2].key(), my_data[2]);
 
     //verify values
-    auto deser_data = entries[0].get_msgpack().data[1].value();
+    msgpack::type::variant received = entries[0].get_msgpack().data[1].value();
     msgpack::type::variant  expected("world");
-    msgpack::type::variant received = *deser_data.get();
+    //msgpack::type::variant received = *deser_data.get();
     EXPECT_THAT(received, expected);
 
-    auto deser_data1 = entries[0].get_msgpack().data[3].value();
+    msgpack::type::variant received1 = entries[0].get_msgpack().data[3].value();
     msgpack::type::variant  expected1("chocolate");
-    msgpack::type::variant received1 = *deser_data1.get();
+    //msgpack::type::variant received1 = *deser_data1.get();
     EXPECT_THAT(received1, expected1);
 
     //cleanup
@@ -306,7 +311,7 @@ MATCHER(MatchesClientName, ""){
     return false;
 }
 
-TEST_F(ClientElementTest, get_elements){
+TEST_F(ClientElementTest, get_all_elements){
     //make some elems
     atom::Client_Element<atom::ConnectionPool::UNIX_Redis, atom::ConnectionPool::Buffer_Type>
     client_one(iocon, 100, 1000, ip, ser, 10, 1000, 5, 5, std::cout, "ONE");
@@ -330,17 +335,11 @@ TEST_F(ClientElementTest, get_elements){
 }
 
 MATCHER(MatchesStreamName, ""){
-    if(arg == "stream:test:new_stream_1"){
-        return true;
-    }
-    if(arg == "stream:test:new_stream_2"){
-        return true;
-    }
-
-    return false;
+    std::regex re("stream:test:.*");
+    return std::regex_match(arg, re);
 }
 
-TEST_F(ClientElementTest, get_streams){
+TEST_F(ClientElementTest, get_all_streams){
     atom::error err;
 
     redis.xadd("stream:test:new_stream_1", "field1", "data1", err);
@@ -355,4 +354,77 @@ TEST_F(ClientElementTest, get_streams){
     for(auto & elem : elems){
         EXPECT_THAT(atom::reply_type::to_string(elem), MatchesStreamName());
     }
+}
+
+MATCHER(MatchesAllStreamNames, ""){
+    std::regex re("stream:.*:.*");
+    return std::regex_match(arg, re);
+}
+
+TEST_F(ClientElementTest, get_all_streams_all_elems){
+    atom::error err;
+
+    redis.xadd("stream:elem1:new_stream_1", "field1", "data1", err);
+    redis.xadd("stream:elem2:new_stream_2", "field1", "data1", err);
+    redis.xadd("stream:elem3:new_stream_1", "field1", "data1", err);
+    redis.xadd("stream:elem4:new_stream_2", "field1", "data1", err);
+
+    atom::redis_reply<boost::asio::streambuf> reply = client_elem.get_all_streams(err);
+
+    auto streams = reply.array_response();
+
+
+    //expect stream names to be returned in the array
+    for(auto & stream : streams){
+        EXPECT_THAT(atom::reply_type::to_string(stream), MatchesAllStreamNames());
+    }
+}
+
+TEST_F(ClientElementTest, get_element_version){
+    atom::error err;
+
+    /* 
+        XADD response:MyElem * element MyElem timeout 10000 cmd_id <command_id>
+        XADD response:MyElem * element MyElem timeout 10000 err_code 0 version 1 language c++ cmd_id <command_id>
+
+    */
+    std::vector<std::string> expected{"element", "MyElem", "timeout", "10000", "err_code", "0", "version", "1", "language", "c++", "cmd_id", "RANDOM"};
+    std::vector<msgpack::type::variant> expected_msgpack{"element", "MyElem", "timeout", "10000", "err_code", "0", "version", "1", "language", "c++", "cmd_id", "RANDOM"};
+
+    auto resp = client_elem.get_element_version("MyElem", err);
+    atom::Serialization ser;
+    auto data = resp.entry();
+    auto entry_data = data.get_msgpack_data();
+
+    for(int index = 0; index < expected_msgpack.size(); index+=2){
+
+        msgpack::type::variant key = expected_msgpack[index];
+        msgpack::type::variant val = expected_msgpack[index+1];
+
+        std::cout<<"Compare keys: "  <<  boost::get<std::string>(key) << " : "  << entry_data[index].key() <<std::endl;
+        EXPECT_THAT(boost::get<std::string>(key), entry_data[index].key());
+        
+        msgpack::type::variant msgpackData = entry_data[index+1].value();
+        std::string val_strD = boost::get<std::string>(msgpackData);
+        if(boost::get<std::string>(val) != "RANDOM"){
+            std::cout<<"Compare values: "  << boost::get<std::string>(val) << " : "  << val_strD <<std::endl;
+            EXPECT_THAT(boost::get<std::string>(val), val_strD);
+        }
+    }   
+}
+
+TEST_F(ClientElementTest, check_element_version){
+    atom::error err;
+
+    /* 
+        XADD response:TestVersionElem * element TestVersionElem timeout 10000 cmd_id <command_id>
+        XADD response:TestVersionElem * element TestVersionElem timeout 10000 err_code 0 version 1 language c++11 cmd_id <command_id>
+
+        XADD response:TestVersionElem * element TestVersionElem timeout 10000 cmd_id <command_id>
+        XADD response:TestVersionElem * element TestVersionElem timeout 10000 err_code 0 command_list  cmd_id <command_id>
+    */
+
+    bool result = client_elem.check_element_version("TestVersionElem", atom::SUPPORTED_LANGUAGES, "0.1", err);
+
+    EXPECT_THAT(result, true);
 }

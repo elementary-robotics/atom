@@ -19,7 +19,7 @@
 #include "Serialization.h"
 #include "Redis.h"
 #include "Logger.h"
-#include "Messages.h"
+#include "ElementResponse.h"
 
 
 namespace atom{
@@ -83,10 +83,20 @@ class Server_Element {
             return connection->xadd(stream_name, ser.method_strings.at(ser_method), processed_data, err);
         };
 
+        void add_command(std::string command_name, atom::CommandHandler<> handler, std::chrono::milliseconds timeout = atom::RESPONSE_TIMEOUT){
+            if(command_handlers.find(command_name) != command_handlers.end()){
+                logger.error("Command name (" + command_name +") is already reserved. Please choose another name.");
+            }
+
+            command_handlers.insert({command_name, handler});
+            command_timeouts.insert({command_name, timeout});
+        };
+
     private:
         std::string name;
         std::map<std::string, atom::reference> references;
         std::map<std::string, atom::CommandHandler<BufferType, MsgPackType>> command_handlers;
+        std::map<std::string, std::chrono::milliseconds> command_timeouts;
         std::vector<std::string> streams;
         std::string atom_version;
         std::string atom_language;

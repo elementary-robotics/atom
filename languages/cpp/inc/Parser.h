@@ -309,7 +309,6 @@ private:
                     case '+':  // simple string
                     case '-':  // nill or error
                     case ':': { // integer
-                        std::cout<<"iter val: "<<*it<<std::endl;
                         assert(id_read);
                         logger.debug("process_entry| simple strings");
                         it++; //move past indicator char

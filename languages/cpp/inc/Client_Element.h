@@ -22,7 +22,7 @@
 #include "Serialization.h"
 #include "Redis.h"
 #include "Logger.h"
-#include "Messages.h"
+#include "ElementResponse.h"
 
 
 namespace atom{
@@ -286,10 +286,11 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
         return atom::element_response<BufferType, MsgPackType>(nullptr, ser.method_strings.at(serialization), err);
     }
 
+    response_read = false;
     start = std::chrono::high_resolution_clock::now();
     std::chrono::milliseconds response_timeout(std::stoi(timeout));
     elapsed_time = std::chrono::milliseconds(0);
-    while(elapsed_time < response_timeout){
+    while(elapsed_time < response_timeout && !response_read){
         elapsed_time = std::chrono::high_resolution_clock::now() - start;
         std::vector<std::string> streams_timestamps {make_response_id(element_name), local_last_id};
         int block_time = std::max(response_timeout, std::chrono::milliseconds(1)).count();
@@ -297,6 +298,7 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
         auto response_list = responses.entry_response_list();
         
         if(response_list.empty()){
+            a_con->release_rx_buffer(responses);
             pool.release_connection(a_con);
             err.set_error_code(atom::error_codes::no_response);
             logger.error("Did not receive acknowledgement from " + element_name);
@@ -310,38 +312,55 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
             
             std::vector<bool> conditions = {false, false, false};
             bool ser_found = false;
-            std::string err_code, err_str, ser_method;
+            std::string err_str, ser_method;
+            std::string resp_err_code = "0";
             //inspect keys for "element", "cmd_id", and "timeout" --> update timeout if all three are found.
             for(int i = 0; i < entry.second.size() - 1; i+=2){
                 if(entry.second[i].second <= longest_reserved_key){
-                    if(atom::reply_type::to_string(entry.second[i]) == "element" && atom::reply_type::to_string(entry.second[i+1]) == element_name){
+                    if(atom::reply_type::to_string(entry.second[i]) == "element" && (atom::reply_type::to_string(entry.second[i+1]).find(element_name) != std::string::npos)){
+                        logger.debug("Found 'element' in response.");
                         conditions[0] = true;
                     }
-                    else if(atom::reply_type::to_string(entry.second[i]) == "cmd_id" && atom::reply_type::to_string(entry.second[i+1]) == command_id){
+                    else if(atom::reply_type::to_string(entry.second[i]) == "cmd_id" && (atom::reply_type::to_string(entry.second[i+1]).find(command_id) != std::string::npos)){
+                        logger.debug("Found 'cmd_id' in response.");
                         conditions[1] = true;
                     }
                     else if(atom::reply_type::to_string(entry.second[i]) == "err_code" ){
+                        logger.debug("Found 'err_code' in response.");
                         conditions[2] = true;
-                        err_code = atom::reply_type::to_string(entry.second[i+1]);
+                        if(ser_found && (serialization == atom::Serialization::method::msgpack)){
+                            /* atom::Serialization::msgpack_serialization<MsgPackType> msgpack_ser;
+                            auto output = msgpack_ser.deserialize(entry.second[i], serialization, false, err);
+                            auto err_c = output.value();
+                            resp_err_code = boost::get<std::string>(err_c); //TODO fix this */
+                        } else{
+                            resp_err_code = atom::reply_type::to_string(entry.second[i+1]);
+                        }
                     }
                     else if(atom::reply_type::to_string(entry.second[i]) == "err_str" ){
-                        ser_found = true;
-                        ser_method = atom::reply_type::to_string(entry.second[i+1]);
+                        logger.debug("Found 'err_str' in response.");
                         err_str = atom::reply_type::to_string(entry.second[i+1]);
+                    } else if(atom::reply_type::to_string(entry.second[i]) == "ser"){
+                        ser_found = true;
+                        serialization = ser.get_method(ser_method);
+                        ser_method = atom::reply_type::to_string(entry.second[i+1]);
                     }
                 }
             }
             if(std::all_of(conditions.begin(), conditions.end(), [](bool c){return c;})){
-                if(std::stoi(err_code) != atom::error_codes::no_error){
+                logger.debug("All conditions met!");
+
+                //format error information from stream
+                if(std::stoi(resp_err_code) != atom::error_codes::no_error){
                     logger.error(err_str);
                 }
-                if(ser_found){
-                    serialization = ser.get_method(ser_method);
-                }
+                atom::error resp_err;
+                resp_err.set_error_code(std::stoi(resp_err_code));
                 
-                std::vector<atom::entry<BufferType, MsgPackType>> entries;
-                ser.deserialize(entries, serialization, entry, err);
-                final_response.fill(entries, ser.method_strings.at(serialization), err);
+                std::vector<atom::entry<BufferType, MsgPackType>> final_entries;
+                ser.deserialize(final_entries, serialization, entry, err);
+                auto final_entry = std::make_shared<atom::entry<BufferType, MsgPackType>>(final_entries[0]);
+                final_response.fill(final_entry, ser.method_strings.at(serialization), resp_err);
                 break;
 
             }
@@ -351,6 +370,7 @@ atom::element_response<BufferType, MsgPackType> send_command(std::string element
             pool.release_connection(a_con);
             return final_response;
         }
+        a_con->release_rx_buffer(responses);
 
     }
 
@@ -387,20 +407,40 @@ atom::redis_reply<BufferType> get_all_streams(std::string element_name, atom::er
 
 ///Get information about all streams of all Elements connected to Redis
 ///@return maps element name to vector of stream names
-std::map<std::string, std::vector<std::string>> get_all_streams();
+atom::redis_reply<BufferType> get_all_streams(atom::error & err); 
 
+
+//TODO: finish debugging
 ///Get names of all commands belonging to an Element connected to Redis
 ///@return vector of command names
-template<typename MsgPackType /* = msgpack::type::variant */>
-atom::element_response<BufferType, MsgPackType> get_all_commands(std::string element_name, atom::error & err){
-    std::vector<std::string> empty_data;
-    auto reply = send_command(element_name, atom::COMMAND_LIST_COMMAND, empty_data, err);
+template<typename MsgPackType = msgpack::type::variant>
+std::vector<std::string> get_all_commands(std::string element_name, atom::error & err){
+    std::vector<MsgPackType> commands;
+    std::vector<std::string> result;
+    if(check_element_version(element_name, {"c++11"}, "1", err)){
+        auto resp = send_command(element_name, atom::COMMAND_LIST_COMMAND, std::vector<std::string>(), err);
+        auto resp_data = resp.entry().get_msgpack_data();
 
+        //search for command_list
+        for(int i = 0; i < resp_data.size(); i+=2){
+            if(resp_data[i].key() == "cmd_list"){
+                auto val = resp_data[i+1].value();
+                commands = boost::get<std::vector<MsgPackType>>(val);
+                break;
+            }
+        }
+        for(auto & cmd : commands){
+            result.push_back(boost::get<std::string>(cmd));
+        }
+    } else{
+        logger.info("Element " + element_name + " does not meet minimum language/version requirement.");
+    }
+    return result;
 }
 
 ///Get names of all commands belonging to all Element connected to Redis
 ///@return maps element names to vector of command names
-template<typename MsgPackType = msgpack::type::variant>
+/* template<typename MsgPackType = msgpack::type::variant>
 std::vector<std::shared_ptr<atom::element_response<BufferType, MsgPackType>>> get_all_commands(atom::error & err){
     std::vector<std::string> empty_data;
     atom::redis_reply<BufferType> elements_list = get_all_elements(err);
@@ -414,9 +454,10 @@ std::vector<std::shared_ptr<atom::element_response<BufferType, MsgPackType>>> ge
     //loop over all elements
     for(auto & elem: elements){
         std::string elem_name = atom::reply_type::to_string(elem);
-        if(check_element_version(elem_name, {"C++"}, "1", err)){
-            auto reply = send_command(elem_name, atom::COMMAND_LIST_COMMAND, empty_data, err);
-            auto shared = std::make_shared<atom::element_response<BufferType, MsgPackType>>(reply);
+        if(check_element_version(elem_name, {"c++11"}, "1", err)){
+            auto resp = send_command(elem_name, atom::COMMAND_LIST_COMMAND, empty_data, err);
+            auto resp_data = resp.entry().get_msgpack_data();
+            auto shared = std::make_shared<atom::element_response<BufferType, MsgPackType>>(resp);
             results.push_back(shared);
         } else{
             logger.info("Element " + elem_name + " does not meet minimum language/version requirement.");
@@ -424,23 +465,59 @@ std::vector<std::shared_ptr<atom::element_response<BufferType, MsgPackType>>> ge
     }
 
     //TODO: Python client renames the commands, but we still need to do that here.
-
+    connection->release_rx_buffer(elements_list);
     return results;
-}
+} */
 
 ///Determine if an Element can meet minimum language and version requirements
 ///@return true/false
 bool check_element_version(std::string element_name, 
                         std::vector<std::string> supported_languages, 
                         std::string supported_min_version, atom::error& err){
-    auto reply = get_element_version(element_name, err);
+    auto resp = get_element_version(element_name, err);
     if(err){
         return false;
     }
 
-    //TODO: complete this function!
-    return true;
+    //using variant because that is how the deserialized data from this command will be formatted in.
+    auto entry_data = resp.entry().get_msgpack_data();
+    std::vector<bool> found{false, false, false};
+    for(int i=0; i < entry_data.size(); i+=2){
+        if(entry_data[i].key() == "err_code"){
+            //check error
+            auto error = entry_data[i+1].value();
+            if(error > msgpack::type::variant("0")){
+                return false;
+            }
+            logger.debug("Found err_code");
+            found[0] = true;
+        }
+        if(entry_data[i].key() == "version"){
+            //check version
+            auto version = entry_data[i+1].value();
+            if(version < msgpack::type::variant(supported_min_version)){
+                return false;
+            }
+            logger.debug("Found version");
+            found[1] = true;
+        }
+        if(entry_data[i].key() == "language"){
+            //check language support
+            auto language = entry_data[i+1].value();
+            for(auto & lang : supported_languages){
+                if(language == msgpack::type::variant(lang)){
+                    found[2] = true;
+                    logger.debug("Found language");
+                }
+            }
+        }
+    }
 
+    if(std::all_of(found.begin(), found.end(), [](bool c){return c;})){
+        //all conditions are met
+        return true;
+    }
+    return false;
 }
 
 
@@ -449,7 +526,7 @@ bool check_element_version(std::string element_name,
 template<typename MsgPackType = msgpack::type::variant>
 atom::element_response<BufferType, MsgPackType> get_element_version(std::string element_name, atom::error & err){
     std::vector<std::string> empty_data;
-    atom::element_response<BufferType, MsgPackType> response = send_command(element_name, atom::VERSION, empty_data, err);
+    atom::element_response<BufferType, MsgPackType> response = send_command(element_name, atom::VERSION_COMMAND, empty_data, err);
     return response;
 }
 
